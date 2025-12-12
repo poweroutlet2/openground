@@ -5,7 +5,7 @@ import lancedb
 import typer
 from sentence_transformers import SentenceTransformer
 
-from ingest import (
+from src.ingest import (
     DEFAULT_DB_PATH,
     DEFAULT_TABLE_NAME,
     get_device,

@@ -19,8 +19,9 @@ def search_documents(
     Search the documentation knowledge base to answer user questions.
 
     Use this to answer user questions about our docs/how-tos/features.
-    Always call this first when a question might be answered from the docs.
-    Optionally filter by collection_title.
+    Always call this when a question might be answered from the docs.
+    First call list_collections to see what collections are available,
+    then filter by collection_title.
     """
     return search(
         query=query,

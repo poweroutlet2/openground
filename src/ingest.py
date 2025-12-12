@@ -10,7 +10,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-from extract import ParsedPage
+from src.extract import ParsedPage
 
 
 COLLECTION_TITLE = "Databricks"
