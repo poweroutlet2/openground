@@ -1,0 +1,27 @@
+[project]
+name = "openground"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "aiohttp",
+    "pydantic",
+    "trafilatura",
+    "typer",
+    "lancedb",
+    "sentence-transformers",
+    "torch",
+    "langchain-text-splitters",
+    "lance>=1.2.1",
+    "tqdm",
+    "fastmcp>=2.13.3",
+    "pandas>=2.3.3",
+]
+
+[dependency-groups]
+dev = [
+    "ipynb",
+    "jupyter",
+    "ruff>=0.14.8",
+]
