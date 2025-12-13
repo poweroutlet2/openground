@@ -141,6 +141,75 @@ def ingest(
     )
 
 
+@app.command("extract-and-ingest")
+def extract_and_ingest(
+    library_name: str = typer.Option(
+        ..., "--library-name", "-l", help="Name of the library/framework."
+    ),
+    sitemap_url: str = typer.Option(
+        ..., "--sitemap-url", "-s", help="Root sitemap URL to crawl."
+    ),
+    filter_keywords: list[str] = typer.Option(
+        [],
+        "--filter-keyword",
+        "-f",
+        help="Keyword filter applied to sitemap URLs. Can be specified multiple times (e.g., -f docs -f blog).",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt between extract and ingest.",
+    ),
+):
+    """Extract pages from a sitemap and ingest them into LanceDB in one step."""
+    from src.extract import main as extract_main
+    from src.ingest import ingest_to_lancedb, load_parsed_pages
+
+    # Construct output directory from library_name
+    output_dir = str(get_raw_data_dir(library_name))
+
+    async def _run_extract():
+        await extract_main(
+            sitemap_url=sitemap_url,
+            concurrency_limit=CONCURRENCY_LIMIT,
+            library_name=library_name,
+            output_dir=output_dir,
+            filter_keywords=filter_keywords,
+        )
+
+    asyncio.run(_run_extract())
+
+    data_dir = get_raw_data_dir(library_name)
+    if not data_dir.exists():
+        raise typer.BadParameter(
+            f"Extraction completed but data directory not found at {data_dir}."
+        )
+
+    json_files = list(data_dir.glob("*.json"))
+    page_count = len(json_files)
+    print(f"\n✅ Extraction complete: {page_count} pages extracted to {data_dir}")
+
+    if not yes:
+        print("\nPress Enter to continue with ingestion, or Ctrl+C to exit...")
+        try:
+            input()
+        except KeyboardInterrupt:
+            print("\n❌ Cancelled by user.")
+            raise typer.Abort()
+
+    print("\n🚀 Starting ingestion...")
+    pages = load_parsed_pages(data_dir)
+    ingest_to_lancedb(
+        pages=pages,
+        db_path=DEFAULT_DB_PATH,
+        table_name=DEFAULT_TABLE_NAME,
+        chunk_size=1000,
+        chunk_overlap=200,
+        batch_size=32,
+    )
+
+
 @app.command("query")
 def query_cmd(
     query: str = typer.Argument(..., help="Query string for hybrid search."),
