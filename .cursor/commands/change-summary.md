@@ -1,1 +1,1 @@
-make a concise hjgh level summary of the curent changes compared to main
+Give a concise high level summary of the curent changes compared to main. Afterwards, give a fitting git commit one-liner. Do not use any editing tools.

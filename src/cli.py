@@ -12,6 +12,7 @@ from src.config import (
     DEFAULT_TABLE_NAME,
     FILTER_KEYWORDS,
     SITEMAP_URL,
+    get_raw_data_dir,
 )
 
 app = typer.Typer(help="Unified CLI for extraction, ingestion, and querying.")
@@ -22,24 +23,11 @@ def extract(
     sitemap_url: str = typer.Option(
         SITEMAP_URL, "--sitemap-url", "-s", help="Root sitemap URL to crawl."
     ),
-    concurrency_limit: int = typer.Option(
-        CONCURRENCY_LIMIT,
-        "--concurrency-limit",
-        "-c",
-        help="Maximum number of concurrent requests.",
-        min=1,
-    ),
     library_name: str = typer.Option(
         DEFAULT_LIBRARY_NAME,
         "--library-name",
         "-l",
         help="Name of the library/framework for this documentation.",
-    ),
-    output_dir: str = typer.Option(
-        str(DEFAULT_RAW_DATA_DIR),
-        "--output-dir",
-        "-o",
-        help="Directory for extracted JSON files (defaults to raw_data/docs/{library_name}).",
     ),
     filter_keywords: list[str] = typer.Option(
         FILTER_KEYWORDS,
@@ -48,10 +36,27 @@ def extract(
         help="Keyword filter applied to sitemap URLs. Can be specified multiple times (e.g., -f docs -f blog).",
         show_default=True,
     ),
+    concurrency_limit: int = typer.Option(
+        CONCURRENCY_LIMIT,
+        "--concurrency-limit",
+        "-c",
+        help="Maximum number of concurrent requests.",
+        min=1,
+    ),
+    output_dir: Optional[str] = typer.Option(
+        None,
+        "--output-dir",
+        "-o",
+        help="Recommended to keep default. Directory for extracted JSON files (defaults to raw_data/{library_name}).",
+    ),
 ):
     """Run the extraction pipeline to fetch and parse pages from a sitemap."""
 
     from src.extract import main as extract_main
+
+    # If output_dir is not specified, construct it from library_name
+    if output_dir is None:
+        output_dir = str(get_raw_data_dir(library_name))
 
     async def _run():
         await extract_main(
@@ -67,34 +72,63 @@ def extract(
 
 @app.command()
 def ingest(
+    library: Optional[str] = typer.Option(
+        None,
+        "--library",
+        "-l",
+        help="Library name to ingest from raw_data/{library}. Takes precedence over --data-dir.",
+    ),
     data_dir: Path = typer.Option(
         DEFAULT_RAW_DATA_DIR,
         "--data-dir",
         "-d",
-        help="Directory containing parsed page files.",
+        help="Recommended to keep default. Directory containing parsed page files.",
     ),
     db_path: Path = typer.Option(
-        DEFAULT_DB_PATH, "--db-path", "-b", help="Directory for LanceDB storage."
+        DEFAULT_DB_PATH,
+        "--db-path",
+        "-b",
+        help="Recommended to keep default. Directory for LanceDB storage.",
     ),
     table_name: str = typer.Option(
-        DEFAULT_TABLE_NAME, "--table-name", "-t", help="LanceDB table name."
+        DEFAULT_TABLE_NAME,
+        "--table-name",
+        "-t",
+        help="Recommended to keep default. LanceDB table name.",
+    ),
+    batch_size: int = typer.Option(
+        32,
+        "--batch-size",
+        "-bs",
+        help="Recommended to keep default. Batch size for embedding generation.",
+        min=1,
     ),
     chunk_size: int = typer.Option(
-        1000, "--chunk-size", "-cs", help="Chunk size for splitting documents.", min=1
+        1000,
+        "--chunk-size",
+        "-cs",
+        help="Recommended to keep default. Chunk size for splitting documents.",
+        min=1,
     ),
     chunk_overlap: int = typer.Option(
         200,
         "--chunk-overlap",
         "-co",
-        help="Overlap size between chunks.",
+        help="Recommended to keep default. Overlap size between chunks.",
         min=0,
-    ),
-    batch_size: int = typer.Option(
-        32, "--batch-size", "-bs", help="Batch size for embedding generation.", min=1
     ),
 ):
     """Chunk documents, generate embeddings, and ingest into LanceDB."""
     from src.ingest import ingest_to_lancedb, load_parsed_pages
+
+    # If library is specified, construct the path and validate it exists
+    if library:
+        data_dir = get_raw_data_dir(library)
+        if not data_dir.exists():
+            raise typer.BadParameter(
+                f"Library '{library}' not found at {data_dir}. "
+                f"Use 'list-raw-libraries' to see available libraries."
+            )
 
     pages = load_parsed_pages(data_dir)
     ingest_to_lancedb(
@@ -150,6 +184,24 @@ def list_libraries_cmd(
         print(lib)
 
 
+@app.command("list-raw-libraries")
+def list_raw_libraries_cmd():
+    """List available libraries in the raw_data directory."""
+    raw_data_dir = Path("raw_data")
+    if not raw_data_dir.exists():
+        print(f"Directory {raw_data_dir} does not exist.")
+        return
+
+    libraries = [d.name for d in raw_data_dir.iterdir() if d.is_dir()]
+    if not libraries:
+        print(f"No libraries found in {raw_data_dir}.")
+        return
+
+    print("Available libraries in raw_data:")
+    for lib in sorted(libraries):
+        print(f"  - {lib}")
+
+
 @app.command("install-mcp")
 def install_mcp_cmd(
     wsl: bool = typer.Option(
@@ -158,7 +210,7 @@ def install_mcp_cmd(
         help="Generate WSL-compatible configuration (uses wsl.exe wrapper).",
     ),
 ):
-    """Generate MCP server configuration JSON for Cursor."""
+    """Generate MCP server configuration JSON for agents."""
     import json
 
     # Auto-detect the project directory

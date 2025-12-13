@@ -1,9 +1,12 @@
 from fastmcp import FastMCP
-from query import get_full_content, list_libraries, search
+from query import get_full_content, list_libraries, search, search_libraries
 
 from src.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
 
-mcp = FastMCP("Documentation Search")
+mcp = FastMCP(
+    "OpenGround Documentation Search",
+    instructions="OpenGround gives you access to up-to-date official documentation for various libraries and frameworks",
+)
 
 
 @mcp.tool
@@ -39,6 +42,21 @@ def list_libraries_tool() -> list[str]:
     to add it.
     """
     return list_libraries(db_path=DEFAULT_DB_PATH, table_name=DEFAULT_TABLE_NAME)
+
+
+@mcp.tool
+def search_available_libraries_tool(search_term: str) -> list[str]:
+    """
+    Search for available documentation libraries by name.
+
+    Use this tool to find libraries matching a search term.
+    Returns libraries whose names contain the search term (case-insensitive).
+    """
+    return search_libraries(
+        search_term=search_term,
+        db_path=DEFAULT_DB_PATH,
+        table_name=DEFAULT_TABLE_NAME,
+    )
 
 
 @mcp.tool

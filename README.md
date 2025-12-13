@@ -1,7 +1,7 @@
  
-# openground CLI
+# openground
 
-Unified CLI for extracting docs, ingesting into LanceDB, and running hybrid search.
+Openground is a system for managing documentation in an agent-friendly manner. It has a CLI to extract and store docs from websites and exposes tools via MCP to agents for querying the data via hybrid BM25 full-text search and vector similarity search.
 
 ## Install
 
@@ -20,9 +20,7 @@ Fetch and parse pages from the sitemap.
 ```bash
 openground extract \
   --sitemap-url https://docs.databricks.com/aws/en/sitemap.xml \
-  --concurrency-limit 50 \
-  --library-name Databricks \
-  --output-dir raw_data/docs/Databricks \
+  --library-name databricks \
   -f docs -f documentation -f blog
 ```
 
@@ -30,7 +28,7 @@ Flags:
 - `--sitemap-url` / `-s`: root sitemap URL.
 - `--concurrency-limit` / `-c`: max concurrent requests.
 - `--library-name` / `-l`: name of the library/framework for this documentation.
-- `--output-dir` / `-o`: where extracted JSON files are written (default `raw_data/docs/{library_name}`).
+- `--output-dir` / `-o`: where extracted JSON files are written (optional; defaults to `raw_data/{library_name}` based on `--library-name`).
 - `--filter-keyword` / `-f`: repeatable; keywords to keep URLs (e.g., `-f docs -f blog`).
 
 ### Ingest
@@ -56,6 +54,6 @@ Optional:
 
 ## Notes
 
-- Default output dir for extract is `raw_data/docs/{library_name}`.
-- LanceDB data defaults to `lancedb_data`; table defaults to `documents`.
+- Default output dir for extract is `raw_data/{library_name}` (automatically derived from `--library-name`).
+- LanceDB data defaults to `.lancedb`; table defaults to `documents`.
 - Reinstall (`uv pip install -e .`) after CLI code changes to refresh the entrypoint. 

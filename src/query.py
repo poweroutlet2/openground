@@ -131,6 +131,23 @@ def list_libraries(
     return sorted(libraries)
 
 
+def search_libraries(
+    search_term: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> list[str]:
+    """
+    Return sorted unique library names that contain the search term (case-insensitive).
+    Returns a list with a message if no libraries match.
+    """
+    libraries = list_libraries(db_path=db_path, table_name=table_name)
+    term_lower = search_term.lower()
+    filtered = [lib for lib in libraries if term_lower in lib.lower()]
+    if not filtered:
+        return [f"No libraries found matching '{search_term}'."]
+    return filtered
+
+
 def get_full_content(
     url: str,
     db_path: Path = DEFAULT_DB_PATH,
