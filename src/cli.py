@@ -6,13 +6,12 @@ import typer
 
 from src.config import (
     CONCURRENCY_LIMIT,
-    DEFAULT_COLLECTION_TITLE,
+    DEFAULT_LIBRARY_NAME,
     DEFAULT_DB_PATH,
+    DEFAULT_RAW_DATA_DIR,
     DEFAULT_TABLE_NAME,
     FILTER_KEYWORDS,
     SITEMAP_URL,
-    default_output_dir,
-    default_raw_data_dir,
 )
 
 app = typer.Typer(help="Unified CLI for extraction, ingestion, and querying.")
@@ -30,17 +29,17 @@ def extract(
         help="Maximum number of concurrent requests.",
         min=1,
     ),
-    collection_title: str = typer.Option(
-        DEFAULT_COLLECTION_TITLE,
-        "--collection-title",
-        "-t",
-        help="Label to store with the extracted documents.",
+    library_name: str = typer.Option(
+        DEFAULT_LIBRARY_NAME,
+        "--library-name",
+        "-l",
+        help="Name of the library/framework for this documentation.",
     ),
     output_dir: str = typer.Option(
-        default_output_dir(),
+        str(DEFAULT_RAW_DATA_DIR),
         "--output-dir",
         "-o",
-        help="Directory for extracted JSON files (defaults to raw_data/docs/{collection_title}).",
+        help="Directory for extracted JSON files (defaults to raw_data/docs/{library_name}).",
     ),
     filter_keywords: list[str] = typer.Option(
         FILTER_KEYWORDS,
@@ -58,7 +57,7 @@ def extract(
         await extract_main(
             sitemap_url=sitemap_url,
             concurrency_limit=concurrency_limit,
-            collection_title=collection_title,
+            library_name=library_name,
             output_dir=output_dir,
             filter_keywords=filter_keywords,
         )
@@ -69,7 +68,7 @@ def extract(
 @app.command()
 def ingest(
     data_dir: Path = typer.Option(
-        default_raw_data_dir(),
+        DEFAULT_RAW_DATA_DIR,
         "--data-dir",
         "-d",
         help="Directory containing parsed page files.",
@@ -111,11 +110,11 @@ def ingest(
 @app.command("query")
 def query_cmd(
     query: str = typer.Argument(..., help="Query string for hybrid search."),
-    collection_title: Optional[str] = typer.Option(
+    library_name: Optional[str] = typer.Option(
         None,
-        "--collection-title",
-        "-c",
-        help="Optional collection title filter.",
+        "--library-name",
+        "-l",
+        help="Optional library name filter.",
     ),
     db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", "-d"),
     table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
@@ -128,7 +127,7 @@ def query_cmd(
         query=query,
         db_path=db_path,
         table_name=table_name,
-        collection_title=collection_title,
+        library_name=library_name,
         top_k=top_k,
     )
     print(results_md)
@@ -139,7 +138,7 @@ def list_libraries_cmd(
     db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", "-d"),
     table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
 ):
-    """List available libraries (collection titles) stored in LanceDB."""
+    """List available libraries stored in LanceDB."""
     from src.query import list_libraries
 
     libraries = list_libraries(db_path=db_path, table_name=table_name)

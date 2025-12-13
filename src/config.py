@@ -3,21 +3,14 @@
 from pathlib import Path
 
 
-DEFAULT_COLLECTION_TITLE = "Databricks"
+DEFAULT_LIBRARY_NAME = "Databricks"
 
 # Extraction defaults
 SITEMAP_URL = "https://docs.databricks.com/aws/en/sitemap.xml"
 CONCURRENCY_LIMIT = 50
 FILTER_KEYWORDS = ["docs", "documentation", "blog"]
 
-
-def default_output_dir(collection_title: str = DEFAULT_COLLECTION_TITLE) -> str:
-    return f"raw_data/docs/{collection_title}"
-
-
-def default_raw_data_dir(collection_title: str = DEFAULT_COLLECTION_TITLE) -> Path:
-    return Path(default_output_dir(collection_title))
-
+DEFAULT_RAW_DATA_DIR = Path(f"raw_data/docs/{DEFAULT_LIBRARY_NAME}")
 
 # Ingestion / query defaults
 DEFAULT_DB_PATH = Path("lancedb_data")

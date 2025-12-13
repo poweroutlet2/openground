@@ -21,7 +21,7 @@ Fetch and parse pages from the sitemap.
 openground extract \
   --sitemap-url https://docs.databricks.com/aws/en/sitemap.xml \
   --concurrency-limit 50 \
-  --collection-title Databricks \
+  --library-name Databricks \
   --output-dir raw_data/docs/Databricks \
   -f docs -f documentation -f blog
 ```
@@ -29,8 +29,8 @@ openground extract \
 Flags:
 - `--sitemap-url` / `-s`: root sitemap URL.
 - `--concurrency-limit` / `-c`: max concurrent requests.
-- `--collection-title` / `-t`: label for the docs collection.
-- `--output-dir` / `-o`: where extracted JSON files are written (default `raw_data/docs/{collection_title}`).
+- `--library-name` / `-l`: name of the library/framework for this documentation.
+- `--output-dir` / `-o`: where extracted JSON files are written (default `raw_data/docs/{library_name}`).
 - `--filter-keyword` / `-f`: repeatable; keywords to keep URLs (e.g., `-f docs -f blog`).
 
 ### Ingest
@@ -38,14 +38,7 @@ Flags:
 Chunk documents, embed, and load into LanceDB.
 
 ```bash
-openground ingest \
-  --data-dir raw_data/docs/Databricks \
-  --db-path lancedb_data \
-  --table-name documents \
-  --chunk-size 1000 \
-  --chunk-overlap 200 \
-  --batch-size 32
-```
+openground ingest```
 
 ### Query
 
@@ -59,10 +52,10 @@ openground query "how to connect" \
 ```
 
 Optional:
-- `--collection-title` / `-c`: filter by collection title.
+- `--library-name` / `-l`: filter by library name.
 
 ## Notes
 
-- Default output dir for extract is `raw_data/docs/{collection_title}`.
+- Default output dir for extract is `raw_data/docs/{library_name}`.
 - LanceDB data defaults to `lancedb_data`; table defaults to `documents`.
 - Reinstall (`uv pip install -e .`) after CLI code changes to refresh the entrypoint. 

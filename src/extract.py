@@ -12,10 +12,10 @@ from tqdm.asyncio import tqdm as async_tqdm
 
 from src.config import (
     CONCURRENCY_LIMIT,
-    DEFAULT_COLLECTION_TITLE,
+    DEFAULT_LIBRARY_NAME,
+    DEFAULT_RAW_DATA_DIR,
     FILTER_KEYWORDS,
     SITEMAP_URL,
-    default_output_dir,
 )
 
 import trafilatura
@@ -23,15 +23,11 @@ import trafilatura
 
 class ParsedPage(TypedDict):
     url: str
-    collection_title: str
+    library_name: str
     title: str | None
     description: str | None
     last_modified: str | None
     content: str
-
-
-COLLECTION_TITLE = DEFAULT_COLLECTION_TITLE
-OUTPUT_DIR = default_output_dir(COLLECTION_TITLE)
 
 
 async def fetch_sitemap_urls(
@@ -61,7 +57,7 @@ async def process_url(
     semaphore: asyncio.Semaphore,
     session: ClientSession,
     url: str,
-    collection_title: str,
+    library_name: str,
 ):
     """
     Process a single URL.
@@ -70,7 +66,7 @@ async def process_url(
         semaphore: The semaphore to use to limit the number of concurrent requests.
         session: The session to use to make the request.
         url: The URL to process.
-        collection_title: The title of the documentation site.
+        library_name: The name of the library/framework for this documentation.
     """
 
     async with semaphore:
@@ -84,7 +80,7 @@ async def process_url(
                 last_modified = response.headers.get("Last-Modified") or ""
 
                 result = await asyncio.to_thread(
-                    parse_html, url, html, last_modified, collection_title
+                    parse_html, url, html, last_modified, library_name
                 )
 
                 return result
@@ -93,13 +89,13 @@ async def process_url(
             return None
 
 
-def parse_html(url: str, html: str, last_modified: str, collection_title: str):
+def parse_html(url: str, html: str, last_modified: str, library_name: str):
     """
     Parse the HTML of a page.
 
     Args:
         html: The HTML of the page.
-        collection_title: The title of the documentation site.
+        library_name: The name of the library/framework for this documentation.
     """
     metadata = trafilatura.extract_metadata(html)
     content = trafilatura.extract(
@@ -115,7 +111,7 @@ def parse_html(url: str, html: str, last_modified: str, collection_title: str):
 
     return ParsedPage(
         url=url,
-        collection_title=collection_title,
+        library_name=library_name,
         title=metadata.title if metadata else "Unknown",
         description=metadata.description if metadata else "",
         last_modified=last_modified,
@@ -146,8 +142,8 @@ async def save_results(results: list[ParsedPage | None], output_dir: str):
 async def main(
     sitemap_url: str = SITEMAP_URL,
     concurrency_limit: int = CONCURRENCY_LIMIT,
-    collection_title: str = COLLECTION_TITLE,
-    output_dir: str = OUTPUT_DIR,
+    library_name: str = DEFAULT_LIBRARY_NAME,
+    output_dir: str = str(DEFAULT_RAW_DATA_DIR),
     filter_keywords: list[str] = FILTER_KEYWORDS,
 ):
     connector = aiohttp.TCPConnector(ssl=False)
@@ -158,7 +154,7 @@ async def main(
         semaphore = asyncio.Semaphore(concurrency_limit)
 
         tasks = [
-            process_url(semaphore, session, url, collection_title)
+            process_url(semaphore, session, url, library_name)
             for url in urls
             if url is not None
         ]

@@ -12,21 +12,12 @@ from tqdm import tqdm
 
 from src.extract import ParsedPage
 from src.config import (
-    DEFAULT_COLLECTION_TITLE,
-    DEFAULT_DB_PATH as CONFIG_DEFAULT_DB_PATH,
-    DEFAULT_TABLE_NAME as CONFIG_DEFAULT_TABLE_NAME,
+    DEFAULT_DB_PATH,
+    DEFAULT_RAW_DATA_DIR,
+    DEFAULT_TABLE_NAME,
     EMBEDDING_DIMENSIONS,
-    EMBEDDING_MODEL as CONFIG_EMBEDDING_MODEL,
-    default_raw_data_dir,
+    EMBEDDING_MODEL,
 )
-
-
-COLLECTION_TITLE = DEFAULT_COLLECTION_TITLE
-RAW_DATA_DIR = default_raw_data_dir(COLLECTION_TITLE)
-DEFAULT_DB_PATH = CONFIG_DEFAULT_DB_PATH
-DEFAULT_TABLE_NAME = CONFIG_DEFAULT_TABLE_NAME
-EMBEDDING_MODEL = CONFIG_EMBEDDING_MODEL
-EMBEDDING_DIMENSIONS = CONFIG_EMBEDDING_DIMENSIONS
 
 
 def get_device() -> str:
@@ -54,7 +45,7 @@ def load_parsed_pages(directory: Path) -> list[ParsedPage]:
         pages.append(
             ParsedPage(
                 url=raw.get("url", ""),
-                collection_title=raw.get("collection_title", ""),
+                library_name=raw.get("library_name", ""),
                 title=raw.get("title"),
                 description=raw.get("description"),
                 last_modified=raw.get("last_modified"),
@@ -75,7 +66,7 @@ def chunk_document(page: ParsedPage, chunk_size: int, chunk_overlap: int) -> lis
         records.append(
             {
                 "url": page["url"],
-                "collection_title": page["collection_title"],
+                "library_name": page["library_name"],
                 "title": page["title"] or "",
                 "description": page["description"] or "",
                 "last_modified": page["last_modified"] or "",
@@ -119,7 +110,7 @@ def ensure_table(db, table_name: str):
     schema = pa.schema(
         [
             pa.field("url", pa.string()),
-            pa.field("collection_title", pa.string()),
+            pa.field("library_name", pa.string()),
             pa.field("title", pa.string()),
             pa.field("description", pa.string()),
             pa.field("last_modified", pa.string()),
@@ -186,7 +177,10 @@ def ingest_to_lancedb(
 
 def main(
     data_dir: Path = typer.Option(
-        RAW_DATA_DIR, "--data-dir", "-d", help="Directory containing parsed page files."
+        DEFAULT_RAW_DATA_DIR,
+        "--data-dir",
+        "-d",
+        help="Directory containing parsed page files.",
     ),
     db_path: Path = typer.Option(
         DEFAULT_DB_PATH, "--db-path", "-b", help="Directory for LanceDB storage."

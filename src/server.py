@@ -1,51 +1,48 @@
-from pathlib import Path
-
 from fastmcp import FastMCP
-from query import get_full_content as get_full_content_from_db, list_libraries, search
+from query import get_full_content, list_libraries, search
 
-DB_PATH = "lancedb"
-TABLE_NAME = "documents"
+from src.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
 
 mcp = FastMCP("Documentation Search")
 
 
 @mcp.tool
-def search_documents(
+def search_documents_tool(
     query: str,
-    collection_title: str,
+    library_name: str,
 ) -> str:
     """
     Search the official documentation knowledge base to answer user questions.
 
     Use this to answer user questions about our docs/how-tos/features.
     Always call this when a question might be answered from the docs.
-    First call list_collections to see what collections are available,
-    then filter by collection_title.
+    First call list_libraries to see what libraries are available,
+    then filter by library_name.
     """
     return search(
         query=query,
-        db_path=Path(DB_PATH),
-        table_name=TABLE_NAME,
-        collection_title=collection_title,
+        db_path=DEFAULT_DB_PATH,
+        table_name=DEFAULT_TABLE_NAME,
+        library_name=library_name,
         top_k=5,
     )
 
 
 @mcp.tool
-def list_collections() -> list[str]:
+def list_libraries_tool() -> list[str]:
     """
-    Retrieve a list of available documentation topics/collections.
+    Retrieve a list of available documentation libraries/frameworks.
 
     Use this tool if you need to see what documentation is available
-    before performing a search, or to verify if a specific topic exists.
-    If the desired collection is not in the list, you may prompt the user
+    before performing a search, or to verify if a specific library exists.
+    If the desired library is not in the list, you may prompt the user
     to add it.
     """
-    return list_libraries(db_path=Path(DB_PATH), table_name=TABLE_NAME)
+    return list_libraries(db_path=DEFAULT_DB_PATH, table_name=DEFAULT_TABLE_NAME)
 
 
 @mcp.tool
-def get_full_content(url: str) -> str:
+def get_full_content_tool(url: str) -> str:
     """
     Retrieve the full content of a document by its URL.
 
@@ -53,10 +50,10 @@ def get_full_content(url: str) -> str:
     that was returned in search results. The URL is provided in the
     search result's tool hint.
     """
-    return get_full_content_from_db(
+    return get_full_content(
         url=url,
-        db_path=Path(DB_PATH),
-        table_name=TABLE_NAME,
+        db_path=DEFAULT_DB_PATH,
+        table_name=DEFAULT_TABLE_NAME,
     )
 
 

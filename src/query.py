@@ -37,7 +37,7 @@ def search(
     query: str,
     db_path: Path = DEFAULT_DB_PATH,
     table_name: str = DEFAULT_TABLE_NAME,
-    collection_title: Optional[str] = None,
+    library_name: Optional[str] = None,
     top_k: int = 10,
 ) -> str:
     """
@@ -48,7 +48,7 @@ def search(
         query: User query text.
         db_path: Path to LanceDB storage.
         table_name: Table name to search.
-        collection_title: Optional filter on collection/doc title column.
+        library_name: Optional filter on library name column.
         top_k: Number of results to return.
     """
     model, _device = _get_model()
@@ -63,9 +63,9 @@ def search(
         .vector(query_vec)  # Semantic side
     )
 
-    if collection_title:
-        safe_title = collection_title.replace("'", "''")
-        search_builder = search_builder.where(f"collection_title = '{safe_title}'")
+    if library_name:
+        safe_name = library_name.replace("'", "''")
+        search_builder = search_builder.where(f"library_name = '{safe_name}'")
 
     results = search_builder.limit(top_k).to_list()
 
@@ -99,8 +99,8 @@ def search(
 
 def main(
     query: str = typer.Argument(..., help="Query string for hybrid search."),
-    collection_title: Optional[str] = typer.Option(
-        None, "--collection-title", "-c", help="Optional collection title filter."
+    library_name: Optional[str] = typer.Option(
+        None, "--library-name", "-l", help="Optional library name filter."
     ),
     db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", "-d"),
     table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
@@ -110,7 +110,7 @@ def main(
         query=query,
         db_path=db_path,
         table_name=table_name,
-        collection_title=collection_title,
+        library_name=library_name,
         top_k=top_k,
     )
 
@@ -121,17 +121,14 @@ def list_libraries(
     db_path: Path = DEFAULT_DB_PATH, table_name: str = DEFAULT_TABLE_NAME
 ) -> list[str]:
     """
-    Return sorted unique non-null collection titles (libraries) from the table.
+    Return sorted unique non-null library names from the table.
     """
     db = lancedb.connect(str(db_path))
     table = db.open_table(table_name)
     df = table.to_pandas()
 
-    if "collection_title" not in df.columns:
-        return []
-
-    collections = df["collection_title"].dropna().unique().tolist()
-    return sorted(collections)
+    libraries = df["library_name"].dropna().unique().tolist()
+    return sorted(libraries)
 
 
 def get_full_content(
