@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -85,7 +86,13 @@ def search(
         elif score:
             score_str = f", score={score}"
 
-        lines.append(f'{idx}. **{title}**: "{snippet}" (Source: {source}{score_str})')
+        # Embed tool call hint for fetching full content
+        tool_hint = json.dumps({"tool": "get_full_content", "url": source})
+
+        lines.append(
+            f'{idx}. **{title}**: "{snippet}" (Source: {source}{score_str})\n'
+            f"   To get full page content: {tool_hint}"
+        )
 
     return "\n".join(lines)
 
@@ -125,6 +132,40 @@ def list_libraries(
 
     collections = df["collection_title"].dropna().unique().tolist()
     return sorted(collections)
+
+
+def get_full_content(
+    url: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> str:
+    """
+    Retrieve the full content of a document by its URL.
+
+    Args:
+        url: URL of the document to retrieve.
+        db_path: Path to LanceDB storage.
+        table_name: Table name to search.
+
+    Returns:
+        Formatted markdown string with title, source URL, and full content.
+    """
+    db = lancedb.connect(str(db_path))
+    table = db.open_table(table_name)
+
+    # Query all chunks for this URL
+    safe_url = url.replace("'", "''")
+    df = table.search().where(f"url = '{safe_url}'").to_pandas()
+
+    if df.empty:
+        return f"No content found for URL: {url}"
+
+    # Sort by chunk_index and concatenate content
+    df = df.sort_values("chunk_index")
+    full_content = "\n\n".join(df["content"].tolist())
+
+    title = df.iloc[0].get("title", "(no title)")
+    return f"# {title}\n\nSource: {url}\n\n{full_content}"
 
 
 if __name__ == "__main__":

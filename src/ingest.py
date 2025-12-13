@@ -15,6 +15,7 @@ from src.config import (
     DEFAULT_COLLECTION_TITLE,
     DEFAULT_DB_PATH as CONFIG_DEFAULT_DB_PATH,
     DEFAULT_TABLE_NAME as CONFIG_DEFAULT_TABLE_NAME,
+    EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL as CONFIG_EMBEDDING_MODEL,
     default_raw_data_dir,
 )
@@ -25,6 +26,7 @@ RAW_DATA_DIR = default_raw_data_dir(COLLECTION_TITLE)
 DEFAULT_DB_PATH = CONFIG_DEFAULT_DB_PATH
 DEFAULT_TABLE_NAME = CONFIG_DEFAULT_TABLE_NAME
 EMBEDDING_MODEL = CONFIG_EMBEDDING_MODEL
+EMBEDDING_DIMENSIONS = CONFIG_EMBEDDING_DIMENSIONS
 
 
 def get_device() -> str:
@@ -123,7 +125,7 @@ def ensure_table(db, table_name: str):
             pa.field("last_modified", pa.string()),
             pa.field("content", pa.string()),
             pa.field("chunk_index", pa.int64()),
-            pa.field("vector", pa.list_(pa.float32(), 384)),
+            pa.field("vector", pa.list_(pa.float32(), EMBEDDING_DIMENSIONS)),
         ]
     )
     return db.create_table(table_name, data=[], mode="create", schema=schema)

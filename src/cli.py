@@ -151,5 +151,82 @@ def list_libraries_cmd(
         print(lib)
 
 
+@app.command("install-mcp")
+def install_mcp_cmd(
+    wsl: bool = typer.Option(
+        False,
+        "--wsl",
+        help="Generate WSL-compatible configuration (uses wsl.exe wrapper).",
+    ),
+):
+    """Generate MCP server configuration JSON for Cursor."""
+    import json
+
+    # Auto-detect the project directory
+    project_dir = Path(__file__).resolve().parent.parent
+
+    if wsl:
+        # For WSL, convert path to ~/... format if it's in home directory
+        home = Path.home()
+        if project_dir.is_relative_to(home):
+            relative_path = project_dir.relative_to(home)
+            wsl_path = f"~/{relative_path}"
+        else:
+            wsl_path = str(project_dir)
+
+        config = {
+            "mcpServers": {
+                "openground": {
+                    "command": "wsl.exe",
+                    "args": [
+                        "zsh",
+                        "-c",
+                        "-i",
+                        f"cd {wsl_path} && uv run python src/server.py",
+                    ],
+                }
+            }
+        }
+    else:
+        config = {
+            "mcpServers": {
+                "openground": {
+                    "command": "uv",
+                    "args": ["run", "python", "src/server.py"],
+                    "cwd": str(project_dir),
+                }
+            }
+        }
+
+    json_str = json.dumps(config, indent=2)
+
+    # Build ASCII box
+    title = " MCP Configuration "
+    lines = json_str.split("\n")
+    box_width = max(max(len(line) for line in lines), len(title)) + 4
+
+    # Borders
+    side_len = (box_width - len(title)) // 2
+    top_border = "-" * side_len + title + "-" * side_len
+    if len(top_border) < box_width:
+        top_border += "-"
+    bottom_border = "-" * len(top_border)
+
+    # Print the box
+    print()
+    print(top_border)
+    print()
+    print(json_str)
+    print()
+    print(bottom_border)
+
+    # Instructions
+    print()
+    print("Copy the JSON above into your MCP configuration file:")
+    print("  Cursor:      ~/.cursor/mcp.json")
+    print("  Claude Code: ~/Library/Application Support/Claude Code/config/mcp.json")
+    print()
+
+
 if __name__ == "__main__":
     app()

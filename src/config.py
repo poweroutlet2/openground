@@ -23,3 +23,4 @@ def default_raw_data_dir(collection_title: str = DEFAULT_COLLECTION_TITLE) -> Pa
 DEFAULT_DB_PATH = Path("lancedb_data")
 DEFAULT_TABLE_NAME = "documents"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DIMENSIONS = 384
