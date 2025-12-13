@@ -1,8 +1,7 @@
 from pathlib import Path
 from typing import Optional
-import lancedb
 from fastmcp import FastMCP
-from query import search
+from query import list_libraries, search
 
 DB_PATH = "lancedb_data"
 TABLE_NAME = "documents"
@@ -40,11 +39,7 @@ def list_collections() -> list[str]:
     Use this tool if you need to see what documentation is available
     before performing a search, or to verify if a specific topic exists.
     """
-    db = lancedb.connect(DB_PATH)
-    table = db.open_table(TABLE_NAME)
-    df = table.to_pandas()
-    collections = df["collection_title"].dropna().unique().tolist()
-    return sorted(collections)
+    return list_libraries(db_path=Path(DB_PATH), table_name=TABLE_NAME)
 
 
 if __name__ == "__main__":

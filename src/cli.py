@@ -19,7 +19,7 @@ from src.ingest import (
     ingest_to_lancedb,
     load_parsed_pages,
 )
-from src.query import search
+from src.query import list_libraries, search
 
 app = typer.Typer(help="Unified CLI for extraction, ingestion, and querying.")
 
@@ -129,6 +129,21 @@ def query_cmd(
         top_k=top_k,
     )
     print(results_md)
+
+
+@app.command("list-libraries")
+def list_libraries_cmd(
+    db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", "-d"),
+    table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
+):
+    """List available libraries (collection titles) stored in LanceDB."""
+    libraries = list_libraries(db_path=db_path, table_name=table_name)
+    if not libraries:
+        print("No libraries found.")
+        return
+
+    for lib in libraries:
+        print(lib)
 
 
 if __name__ == "__main__":

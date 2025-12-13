@@ -114,5 +114,22 @@ def main(
     print(results_md)
 
 
+def list_libraries(
+    db_path: Path = DEFAULT_DB_PATH, table_name: str = DEFAULT_TABLE_NAME
+) -> list[str]:
+    """
+    Return sorted unique non-null collection titles (libraries) from the table.
+    """
+    db = lancedb.connect(str(db_path))
+    table = db.open_table(table_name)
+    df = table.to_pandas()
+
+    if "collection_title" not in df.columns:
+        return []
+
+    collections = df["collection_title"].dropna().unique().tolist()
+    return sorted(collections)
+
+
 if __name__ == "__main__":
     typer.run(main)
