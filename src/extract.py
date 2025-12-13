@@ -10,6 +10,14 @@ from xml.etree import ElementTree as ET
 from tqdm import tqdm
 from tqdm.asyncio import tqdm as async_tqdm
 
+from src.config import (
+    CONCURRENCY_LIMIT,
+    DEFAULT_COLLECTION_TITLE,
+    FILTER_KEYWORDS,
+    SITEMAP_URL,
+    default_output_dir,
+)
+
 import trafilatura
 
 
@@ -22,12 +30,8 @@ class ParsedPage(TypedDict):
     content: str
 
 
-SITEMAP_URL = "https://docs.databricks.com/aws/en/sitemap.xml"
-CONCURRENCY_LIMIT = 50
-
-COLLECTION_TITLE = "Databricks"
-OUTPUT_DIR = f"raw_data/docs/{COLLECTION_TITLE}"
-FILTER_KEYWORDS = ["docs", "documentation", "blog"]
+COLLECTION_TITLE = DEFAULT_COLLECTION_TITLE
+OUTPUT_DIR = default_output_dir(COLLECTION_TITLE)
 
 
 async def fetch_sitemap_urls(

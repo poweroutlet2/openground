@@ -11,13 +11,20 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 from src.extract import ParsedPage
+from src.config import (
+    DEFAULT_COLLECTION_TITLE,
+    DEFAULT_DB_PATH as CONFIG_DEFAULT_DB_PATH,
+    DEFAULT_TABLE_NAME as CONFIG_DEFAULT_TABLE_NAME,
+    EMBEDDING_MODEL as CONFIG_EMBEDDING_MODEL,
+    default_raw_data_dir,
+)
 
 
-COLLECTION_TITLE = "Databricks"
-RAW_DATA_DIR = Path(f"raw_data/docs/{COLLECTION_TITLE}")
-DEFAULT_DB_PATH = Path("lancedb_data")
-DEFAULT_TABLE_NAME = "documents"
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+COLLECTION_TITLE = DEFAULT_COLLECTION_TITLE
+RAW_DATA_DIR = default_raw_data_dir(COLLECTION_TITLE)
+DEFAULT_DB_PATH = CONFIG_DEFAULT_DB_PATH
+DEFAULT_TABLE_NAME = CONFIG_DEFAULT_TABLE_NAME
+EMBEDDING_MODEL = CONFIG_EMBEDDING_MODEL
 
 
 def get_device() -> str:
