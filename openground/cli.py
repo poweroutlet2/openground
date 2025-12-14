@@ -18,6 +18,7 @@ from openground.config import (
     DEFAULT_TABLE_NAME,
     FILTER_KEYWORDS,
     SITEMAP_URL,
+    get_data_home,
     get_raw_data_dir,
 )
 
@@ -263,7 +264,7 @@ def list_libraries_cmd(
 @app.command("list-raw-libraries")
 def list_raw_libraries_cmd():
     """List available libraries in the raw_data directory."""
-    raw_data_dir = Path("raw_data")
+    raw_data_dir = get_data_home() / "raw_data"
     if not raw_data_dir.exists():
         print(f"Directory {raw_data_dir} does not exist.")
         return

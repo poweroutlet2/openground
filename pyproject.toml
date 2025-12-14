@@ -44,8 +44,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/poweroutlet2/openground"
-Repository = "https://github.com/poweroutlet/openground"
-Issues = "https://github.com/poweroutlet/openground/issues"
+Repository = "https://github.com/poweroutlet2/openground"
+Issues = "https://github.com/poweroutlet2/openground/issues"
 
 [project.scripts]
 openground = "openground.cli:app"

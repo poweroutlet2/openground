@@ -14,6 +14,28 @@ _MODEL_CACHE: Optional[SentenceTransformer] = None
 _DEVICE_CACHE: Optional[str] = None
 
 
+def _escape_sql_string(value: str) -> str:
+    """
+    Escape a string value for safe use in LanceDB SQL WHERE clauses.
+
+    This function escapes single quotes and backslashes to prevent SQL injection.
+    Note: LanceDB uses DataFusion which parses SQL, so proper escaping is critical.
+
+    Args:
+        value: The string value to escape
+
+    Returns:
+        Escaped string safe for use in SQL string literals
+    """
+    # Remove null bytes (can cause string truncation in some parsers)
+    value = value.replace("\x00", "")
+    # Escape backslashes first (must be done before escaping quotes)
+    value = value.replace("\\", "\\\\")
+    # Escape single quotes (SQL standard: ' becomes '')
+    value = value.replace("'", "''")
+    return value
+
+
 def _get_model() -> tuple[SentenceTransformer, str]:
     global _MODEL_CACHE, _DEVICE_CACHE
     if _MODEL_CACHE is None:
@@ -64,7 +86,7 @@ def search(
     )
 
     if library_name:
-        safe_name = library_name.replace("'", "''")
+        safe_name = _escape_sql_string(library_name)
         search_builder = search_builder.where(f"library_name = '{safe_name}'")
 
     results = search_builder.limit(top_k).to_list()
@@ -168,7 +190,7 @@ def get_full_content(
     table = db.open_table(table_name)
 
     # Query all chunks for this URL
-    safe_url = url.replace("'", "''")
+    safe_url = _escape_sql_string(url)
     df = table.search().where(f"url = '{safe_url}'").to_pandas()
 
     if df.empty:
@@ -190,7 +212,7 @@ def get_library_stats(
     """Get statistics for a library (chunk count, unique URLs, etc.)."""
     db = lancedb.connect(str(db_path))
     table = db.open_table(table_name)
-    safe_name = library_name.replace("'", "''")
+    safe_name = _escape_sql_string(library_name)
     df = table.search().where(f"library_name = '{safe_name}'").to_pandas()
 
     if df.empty:
@@ -215,7 +237,7 @@ def delete_library(
     """Delete all documents for a library. Returns count of deleted rows."""
     db = lancedb.connect(str(db_path))
     table = db.open_table(table_name)
-    safe_name = library_name.replace("'", "''")
+    safe_name = _escape_sql_string(library_name)
 
     # Get count before deletion
     df = table.search().where(f"library_name = '{safe_name}'").to_pandas()
