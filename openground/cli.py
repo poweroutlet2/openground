@@ -11,18 +11,42 @@ from typing import Optional
 import typer
 
 from openground.config import (
-    CONCURRENCY_LIMIT,
     DEFAULT_LIBRARY_NAME,
-    DEFAULT_DB_PATH,
     DEFAULT_RAW_DATA_DIR,
-    DEFAULT_TABLE_NAME,
     FILTER_KEYWORDS,
     SITEMAP_URL,
     get_data_home,
     get_raw_data_dir,
+    get_config_path,
+    load_config,
+    save_config,
+    get_effective_config,
+    get_default_config,
+    clear_config_cache,
 )
 
-app = typer.Typer(help="Unified CLI for extraction, ingestion, and querying.")
+app = typer.Typer(
+    help="Openground is a CLI for storing and querying documentation in a local vector database."
+)
+
+
+@app.callback(invoke_without_command=True)
+def ensure_config_exists(ctx: typer.Context):
+    """Ensure config file exists before running any command."""
+    config_path = get_config_path()
+    file_existed = config_path.exists()
+
+    # Explicitly create config file with defaults if it doesn't exist
+    if not config_path.exists():
+        default_config = get_default_config()
+        save_config(default_config)
+
+    # Load the effective config (now that we know it exists)
+    get_effective_config()
+
+    # Notify user if we just created it
+    if not file_existed and config_path.exists():
+        print(f"✓ Config file created at {config_path}\n")
 
 
 @app.command()
@@ -30,9 +54,9 @@ def extract(
     sitemap_url: str = typer.Option(
         SITEMAP_URL, "--sitemap-url", "-s", help="Root sitemap URL to crawl."
     ),
-    library_name: str = typer.Option(
+    library: str = typer.Option(
         DEFAULT_LIBRARY_NAME,
-        "--library-name",
+        "--library",
         "-l",
         help="Name of the library/framework for this documentation.",
     ),
@@ -43,33 +67,33 @@ def extract(
         help="Keyword filter applied to sitemap URLs. Can be specified multiple times (e.g., -f docs -f blog).",
         show_default=True,
     ),
-    concurrency_limit: int = typer.Option(
-        CONCURRENCY_LIMIT,
+    concurrency_limit: int | None = typer.Option(
+        None,
         "--concurrency-limit",
         "-c",
         help="Maximum number of concurrent requests.",
         min=1,
-    ),
-    output_dir: Optional[str] = typer.Option(
-        None,
-        "--output-dir",
-        "-o",
-        help="Recommended to keep default. Directory for extracted JSON files (defaults to raw_data/{library_name}).",
     ),
 ):
     """Run the extraction pipeline to fetch and parse pages from a sitemap."""
 
     from openground.extract import main as extract_main
 
-    # If output_dir is not specified, construct it from library_name
-    if output_dir is None:
-        output_dir = str(get_raw_data_dir(library_name))
+    # Get config
+    config = get_effective_config()
+
+    # Use CLI flag if provided, otherwise use config value
+    if concurrency_limit is None:
+        concurrency_limit = config["extraction"]["concurrency_limit"]
+
+    # Output dir is always computed from library
+    output_dir = get_raw_data_dir(library)
 
     async def _run():
         await extract_main(
             sitemap_url=sitemap_url,
             concurrency_limit=concurrency_limit,
-            library_name=library_name,
+            library_name=library,
             output_dir=output_dir,
             filter_keywords=filter_keywords,
         )
@@ -83,50 +107,47 @@ def ingest(
         None,
         "--library",
         "-l",
-        help="Library name to ingest from raw_data/{library}. Takes precedence over --data-dir.",
+        help="Library name to ingest from raw_data/{library}.",
     ),
-    data_dir: Path = typer.Option(
-        DEFAULT_RAW_DATA_DIR,
-        "--data-dir",
-        "-d",
-        help="Recommended to keep default. Directory containing parsed page files.",
-    ),
-    db_path: Path = typer.Option(
-        DEFAULT_DB_PATH,
-        "--db-path",
-        "-b",
-        help="Recommended to keep default. Directory for LanceDB storage.",
-    ),
-    table_name: str = typer.Option(
-        DEFAULT_TABLE_NAME,
-        "--table-name",
-        "-t",
-        help="Recommended to keep default. LanceDB table name.",
-    ),
-    batch_size: int = typer.Option(
-        32,
+    batch_size: int | None = typer.Option(
+        None,
         "--batch-size",
         "-bs",
-        help="Recommended to keep default. Batch size for embedding generation.",
+        help="Batch size for embedding generation.",
         min=1,
     ),
-    chunk_size: int = typer.Option(
-        1000,
+    chunk_size: int | None = typer.Option(
+        None,
         "--chunk-size",
         "-cs",
-        help="Recommended to keep default. Chunk size for splitting documents.",
+        help="Chunk size for splitting documents.",
         min=1,
     ),
-    chunk_overlap: int = typer.Option(
-        200,
+    chunk_overlap: int | None = typer.Option(
+        None,
         "--chunk-overlap",
         "-co",
-        help="Recommended to keep default. Overlap size between chunks.",
+        help="Overlap size between chunks.",
         min=0,
     ),
 ):
     """Chunk documents, generate embeddings, and ingest into LanceDB."""
     from openground.ingest import ingest_to_lancedb, load_parsed_pages
+
+    # Get config
+    config = get_effective_config()
+
+    # Get db_path and table_name from config
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+
+    # Use CLI flags if provided, otherwise use config values
+    if batch_size is None:
+        batch_size = config["ingestion"]["batch_size"]
+    if chunk_size is None:
+        chunk_size = config["ingestion"]["chunk_size"]
+    if chunk_overlap is None:
+        chunk_overlap = config["ingestion"]["chunk_overlap"]
 
     # If library is specified, construct the path and validate it exists
     if library:
@@ -136,6 +157,9 @@ def ingest(
                 f"Library '{library}' not found at {data_dir}. "
                 f"Use 'list-raw-libraries' to see available libraries."
             )
+    else:
+        # If no library specified, use default
+        data_dir = DEFAULT_RAW_DATA_DIR
 
     pages = load_parsed_pages(data_dir)
     ingest_to_lancedb(
@@ -145,13 +169,15 @@ def ingest(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         batch_size=batch_size,
+        embedding_model=config["embedding_model"],
+        embedding_dimensions=config["embedding_dimensions"],
     )
 
 
 @app.command("extract-and-ingest")
 def extract_and_ingest(
-    library_name: str = typer.Option(
-        ..., "--library-name", "-l", help="Name of the library/framework."
+    library: str = typer.Option(
+        ..., "--library", "-l", help="Name of the library/framework."
     ),
     sitemap_url: str = typer.Option(
         ..., "--sitemap-url", "-s", help="Root sitemap URL to crawl."
@@ -173,21 +199,24 @@ def extract_and_ingest(
     from openground.extract import main as extract_main
     from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
-    # Construct output directory from library_name
-    output_dir = str(get_raw_data_dir(library_name))
+    # Get config
+    config = get_effective_config()
+
+    # Construct output directory from library
+    output_dir = get_raw_data_dir(library)
 
     async def _run_extract():
         await extract_main(
             sitemap_url=sitemap_url,
-            concurrency_limit=CONCURRENCY_LIMIT,
-            library_name=library_name,
+            concurrency_limit=config["extraction"]["concurrency_limit"],
+            library_name=library,
             output_dir=output_dir,
             filter_keywords=filter_keywords,
         )
 
     asyncio.run(_run_extract())
 
-    data_dir = get_raw_data_dir(library_name)
+    data_dir = get_raw_data_dir(library)
     if not data_dir.exists():
         raise typer.BadParameter(
             f"Extraction completed but data directory not found at {data_dir}."
@@ -207,37 +236,55 @@ def extract_and_ingest(
 
     print("\n🚀 Starting ingestion...")
     pages = load_parsed_pages(data_dir)
+
+    # Get db_path and table_name from config
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+
     ingest_to_lancedb(
         pages=pages,
-        db_path=DEFAULT_DB_PATH,
-        table_name=DEFAULT_TABLE_NAME,
-        chunk_size=1000,
-        chunk_overlap=200,
-        batch_size=32,
+        db_path=db_path,
+        table_name=table_name,
+        chunk_size=config["ingestion"]["chunk_size"],
+        chunk_overlap=config["ingestion"]["chunk_overlap"],
+        batch_size=config["ingestion"]["batch_size"],
+        embedding_model=config["embedding_model"],
+        embedding_dimensions=config["embedding_dimensions"],
     )
 
 
 @app.command("query")
 def query_cmd(
     query: str = typer.Argument(..., help="Query string for hybrid search."),
-    library_name: Optional[str] = typer.Option(
+    library: Optional[str] = typer.Option(
         None,
-        "--library-name",
+        "--library",
         "-l",
         help="Optional library name filter.",
     ),
-    db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", "-d"),
-    table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
-    top_k: int = typer.Option(5, "--top-k", "-k", help="Number of results to return."),
+    top_k: int = typer.Option(
+        None, "--top-k", "-k", help="Number of results to return."
+    ),
 ):
     """Run a hybrid search (semantic + BM25) against the LanceDB table."""
     from openground.query import search
+
+    # Get config
+    config = get_effective_config()
+
+    # Get db_path and table_name from config
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+
+    # Use CLI flag if provided, otherwise use config value
+    if top_k is None:
+        top_k = config["query"]["top_k"]
 
     results_md = search(
         query=query,
         db_path=db_path,
         table_name=table_name,
-        library_name=library_name,
+        library_name=library,
         top_k=top_k,
     )
     print(results_md)
@@ -245,12 +292,16 @@ def query_cmd(
 
 @app.command("list-libraries")
 @app.command("ls")
-def list_libraries_cmd(
-    db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", "-d"),
-    table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
-):
+def list_libraries_cmd():
     """List available libraries stored in LanceDB."""
     from openground.query import list_libraries
+
+    # Get config
+    config = get_effective_config()
+
+    # Get db_path and table_name from config
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
 
     libraries = list_libraries(db_path=db_path, table_name=table_name)
     if not libraries:
@@ -283,12 +334,17 @@ def list_raw_libraries_cmd():
 @app.command("rm")
 def remove_library_cmd(
     library_name: str = typer.Argument(..., help="Name of the library to remove."),
-    db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", "-d"),
-    table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ):
     """Remove all documents for a library from LanceDB."""
     from openground.query import get_library_stats, delete_library
+
+    # Get config
+    config = get_effective_config()
+
+    # Get db_path and table_name from config
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
 
     stats = get_library_stats(library_name, db_path, table_name)
     if not stats:
@@ -671,6 +727,134 @@ def install_cmd(
             "Tip: Run `openground install-mcp --claude-code`, `openground install-mcp --cursor`, or `openground install-mcp --opencode` to automatically install."
         )
         print()
+
+
+# Config Sub App
+config_app = typer.Typer(help="Manage openground configuration.")
+app.add_typer(config_app, name="config")
+
+
+@config_app.command("show")
+def config_show(
+    defaults: bool = typer.Option(
+        False, "--defaults", help="Show only hardcoded defaults (ignore user config)."
+    ),
+):
+    """Display current configuration."""
+    config_path = get_config_path()
+    print(f"Config file: {config_path}\n")
+
+    if defaults:
+        # Show hardcoded defaults from source of truth
+        config = get_default_config()
+        print(json.dumps(config, indent=2))
+    else:
+        # Show effective config
+        config = get_effective_config()
+        print(json.dumps(config, indent=2))
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(
+        ..., help="Config key (use dot notation like 'ingestion.chunk_size')"
+    ),
+    value: str = typer.Argument(..., help="Value to set"),
+):
+    """Set a configuration value."""
+    # Load current config (not merged with defaults)
+    config = load_config()
+
+    # Parse the key (support dot notation)
+    parts = key.split(".")
+
+    # Convert value to appropriate type
+    parsed_value: str | int | float
+    try:
+        # Try to parse as int
+        parsed_value = int(value)
+    except ValueError:
+        try:
+            # Try to parse as float
+            parsed_value = float(value)
+        except ValueError:
+            # Keep as string
+            parsed_value = value
+
+    # Navigate to the right place in the config
+    if len(parts) == 1:
+        # Top-level key
+        config[parts[0]] = parsed_value
+    elif len(parts) == 2:
+        # Nested key (e.g., "ingestion.chunk_size")
+        section, subkey = parts
+        if section not in config:
+            config[section] = {}
+        config[section][subkey] = parsed_value
+    else:
+        print(f"❌ Error: Invalid key format '{key}'. Use 'key' or 'section.key'.")
+        raise typer.Exit(1)
+
+    # Save config
+    save_config(config)
+    clear_config_cache()
+
+    print(f"✅ Set {key} = {parsed_value}")
+    print(f"   Config saved to {get_config_path()}")
+
+
+@config_app.command("get")
+def config_get(
+    key: str = typer.Argument(
+        ..., help="Config key (use dot notation like 'ingestion.chunk_size')"
+    ),
+):
+    """Get a configuration value."""
+    config = get_effective_config()
+
+    # Parse the key (support dot notation)
+    parts = key.split(".")
+
+    try:
+        if len(parts) == 1:
+            value = config[parts[0]]
+        elif len(parts) == 2:
+            section, subkey = parts
+            value = config[section][subkey]
+        else:
+            print(f"❌ Error: Invalid key format '{key}'. Use 'key' or 'section.key'.")
+            raise typer.Exit(1)
+
+        print(value)
+    except KeyError:
+        print(f"❌ Error: Key '{key}' not found in config.")
+        raise typer.Exit(1)
+
+
+@config_app.command("path")
+def config_path():
+    """Print the path to the configuration file."""
+    print(get_config_path())
+
+
+@config_app.command("reset")
+def config_reset(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+):
+    """Reset configuration to defaults (deletes the config file)."""
+    config_path = get_config_path()
+
+    if not config_path.exists():
+        print("No config file exists. Nothing to reset.")
+        return
+
+    if not yes:
+        typer.confirm(f"Delete config file at {config_path}?", abort=True)
+
+    config_path.unlink()
+    clear_config_cache()
+    print(f"✅ Config file deleted: {config_path}")
+    print("   All settings will use defaults.")
 
 
 if __name__ == "__main__":

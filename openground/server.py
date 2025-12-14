@@ -1,12 +1,25 @@
+from pathlib import Path
+
 from fastmcp import FastMCP
 
-from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
+from openground.config import get_effective_config
 from openground.query import get_full_content, list_libraries, search, search_libraries
 
 mcp = FastMCP(
     "OpenGround Documentation Search",
     instructions="OpenGround gives you access to up-to-date official documentation for various libraries and frameworks",
 )
+
+# Lazy config loading - loaded once on first use
+_config = None
+
+
+def _get_config():
+    """Get effective config, loading it once and caching."""
+    global _config
+    if _config is None:
+        _config = get_effective_config()
+    return _config
 
 
 @mcp.tool
@@ -22,12 +35,13 @@ def search_documents_tool(
     First call list_libraries to see what libraries are available,
     then filter by library_name.
     """
+    config = _get_config()
     return search(
         query=query,
-        db_path=DEFAULT_DB_PATH,
-        table_name=DEFAULT_TABLE_NAME,
+        db_path=Path(config["db_path"]).expanduser(),
+        table_name=config["table_name"],
         library_name=library_name,
-        top_k=5,
+        top_k=config["query"]["top_k"],
     )
 
 
@@ -41,7 +55,10 @@ def list_libraries_tool() -> list[str]:
     If the desired library is not in the list, you may prompt the user
     to add it.
     """
-    return list_libraries(db_path=DEFAULT_DB_PATH, table_name=DEFAULT_TABLE_NAME)
+    config = _get_config()
+    return list_libraries(
+        db_path=Path(config["db_path"]).expanduser(), table_name=config["table_name"]
+    )
 
 
 @mcp.tool
@@ -52,10 +69,11 @@ def search_available_libraries_tool(search_term: str) -> list[str]:
     Use this tool to find libraries matching a search term.
     Returns libraries whose names contain the search term (case-insensitive).
     """
+    config = _get_config()
     return search_libraries(
         search_term=search_term,
-        db_path=DEFAULT_DB_PATH,
-        table_name=DEFAULT_TABLE_NAME,
+        db_path=Path(config["db_path"]).expanduser(),
+        table_name=config["table_name"],
     )
 
 
@@ -68,10 +86,11 @@ def get_full_content_tool(url: str) -> str:
     that was returned in search results. The URL is provided in the
     search result's tool hint.
     """
+    config = _get_config()
     return get_full_content(
         url=url,
-        db_path=DEFAULT_DB_PATH,
-        table_name=DEFAULT_TABLE_NAME,
+        db_path=Path(config["db_path"]).expanduser(),
+        table_name=config["table_name"],
     )
 
 

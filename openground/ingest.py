@@ -28,8 +28,8 @@ def get_device() -> str:
     return "cpu"
 
 
-def load_model(device: str) -> SentenceTransformer:
-    model = SentenceTransformer(EMBEDDING_MODEL, device=device)
+def load_model(device: str, model_name: str = EMBEDDING_MODEL) -> SentenceTransformer:
+    model = SentenceTransformer(model_name, device=device)
     return model
 
 
@@ -104,7 +104,7 @@ def generate_embeddings(
     return all_embeddings
 
 
-def ensure_table(db, table_name: str):
+def ensure_table(db, table_name: str, embedding_dimensions: int = EMBEDDING_DIMENSIONS):
     if table_name in db.table_names():
         return db.open_table(table_name)
     schema = pa.schema(
@@ -116,7 +116,7 @@ def ensure_table(db, table_name: str):
             pa.field("last_modified", pa.string()),
             pa.field("content", pa.string()),
             pa.field("chunk_index", pa.int64()),
-            pa.field("vector", pa.list_(pa.float32(), EMBEDDING_DIMENSIONS)),
+            pa.field("vector", pa.list_(pa.float32(), embedding_dimensions)),
         ]
     )
     return db.create_table(table_name, data=[], mode="create", schema=schema)
@@ -129,6 +129,8 @@ def ingest_to_lancedb(
     chunk_size: int,
     chunk_overlap: int,
     batch_size: int,
+    embedding_model: str = EMBEDDING_MODEL,
+    embedding_dimensions: int = EMBEDDING_DIMENSIONS,
 ):
     if not pages:
         print("No pages to ingest.")
@@ -136,10 +138,11 @@ def ingest_to_lancedb(
 
     device = get_device()
     print(f"Using device: {device}")
-    model = load_model(device)
+    print(f"Using embedding model: {embedding_model}")
+    model = load_model(device, model_name=embedding_model)
 
     db = lancedb.connect(str(db_path))
-    table = ensure_table(db, table_name)
+    table = ensure_table(db, table_name, embedding_dimensions=embedding_dimensions)
 
     # Chunk documents with progress
     all_records = []

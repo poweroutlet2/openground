@@ -6,12 +6,13 @@ import lancedb
 import typer
 from sentence_transformers import SentenceTransformer
 
-from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
+from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME, get_effective_config
 from openground.ingest import get_device, load_model
 
 # Cache the model so repeated queries avoid reloading
 _MODEL_CACHE: Optional[SentenceTransformer] = None
 _DEVICE_CACHE: Optional[str] = None
+_MODEL_NAME_CACHE: Optional[str] = None
 
 
 def _escape_sql_string(value: str) -> str:
@@ -37,11 +38,15 @@ def _escape_sql_string(value: str) -> str:
 
 
 def _get_model() -> tuple[SentenceTransformer, str]:
-    global _MODEL_CACHE, _DEVICE_CACHE
-    if _MODEL_CACHE is None:
+    global _MODEL_CACHE, _DEVICE_CACHE, _MODEL_NAME_CACHE
+    config = get_effective_config()
+    model_name = config["embedding_model"]
+
+    if _MODEL_CACHE is None or _MODEL_NAME_CACHE != model_name:
         device = get_device()
         _DEVICE_CACHE = device
-        _MODEL_CACHE = load_model(device)
+        _MODEL_NAME_CACHE = model_name
+        _MODEL_CACHE = load_model(device, model_name=model_name)
     return _MODEL_CACHE, _DEVICE_CACHE or get_device()
 
 
@@ -117,26 +122,6 @@ def search(
         )
 
     return "\n".join(lines)
-
-
-def main(
-    query: str = typer.Argument(..., help="Query string for hybrid search."),
-    library_name: Optional[str] = typer.Option(
-        None, "--library-name", "-l", help="Optional library name filter."
-    ),
-    db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", "-d"),
-    table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
-    top_k: int = typer.Option(5, "--top-k", "-k"),
-):
-    results_md = search(
-        query=query,
-        db_path=db_path,
-        table_name=table_name,
-        library_name=library_name,
-        top_k=top_k,
-    )
-
-    print(results_md)
 
 
 def list_libraries(
@@ -246,7 +231,3 @@ def delete_library(
     # Delete rows
     table.delete(f"library_name = '{safe_name}'")
     return count
-
-
-if __name__ == "__main__":
-    typer.run(main)

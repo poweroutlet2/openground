@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+from pathlib import Path
 from typing import TypedDict
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
@@ -161,7 +162,7 @@ def parse_html(url: str, html: str, last_modified: str, library_name: str):
     )
 
 
-async def save_results(results: list[ParsedPage | None], output_dir: str):
+async def save_results(results: list[ParsedPage | None], output_dir: Path):
     """
     Save the results to a file.
 
@@ -170,13 +171,13 @@ async def save_results(results: list[ParsedPage | None], output_dir: str):
         output_dir: The directory to save the results to.
     """
 
-    os.makedirs(f"{output_dir}", exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     valid_results = [r for r in results if r is not None]
 
     for result in tqdm(valid_results, desc="Saving files", unit="file"):
         slug = urlparse(result["url"]).path.strip("/").replace("/", "-") or "home"
-        file_name = f"{output_dir}/{slug}.json"
+        file_name = output_dir / f"{slug}.json"
         with open(file_name, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2)
 
@@ -185,7 +186,7 @@ async def main(
     sitemap_url: str = SITEMAP_URL,
     concurrency_limit: int = CONCURRENCY_LIMIT,
     library_name: str = DEFAULT_LIBRARY_NAME,
-    output_dir: str = str(DEFAULT_RAW_DATA_DIR),
+    output_dir: Path = DEFAULT_RAW_DATA_DIR,
     filter_keywords: list[str] = FILTER_KEYWORDS,
 ):
     connector = aiohttp.TCPConnector()
