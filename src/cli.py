@@ -243,6 +243,7 @@ def query_cmd(
 
 
 @app.command("list-libraries")
+@app.command("ls")
 def list_libraries_cmd(
     db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", "-d"),
     table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
@@ -275,6 +276,48 @@ def list_raw_libraries_cmd():
     print("Available libraries in raw_data:")
     for lib in sorted(libraries):
         print(f"  - {lib}")
+
+
+@app.command("remove-library")
+@app.command("rm")
+def remove_library_cmd(
+    library_name: str = typer.Argument(..., help="Name of the library to remove."),
+    db_path: Path = typer.Option(DEFAULT_DB_PATH, "--db-path", "-d"),
+    table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+):
+    """Remove all documents for a library from LanceDB."""
+    from src.query import get_library_stats, delete_library
+
+    stats = get_library_stats(library_name, db_path, table_name)
+    if not stats:
+        print(f"Library '{library_name}' not found.")
+        raise typer.Exit(1)
+
+    # Show confirmation info
+    print(f"\nLibrary: {stats['library_name']}")
+    print(f"  Chunks: {stats['chunk_count']}")
+    print(f"  Pages:  {stats['unique_urls']}")
+    if stats["titles"]:
+        print(f"  Sample titles: {', '.join(stats['titles'][:3])}")
+    else:
+        print("  Sample titles: (no titles available)")
+
+    if not yes:
+        typer.confirm("\nAre you sure you want to delete this library?", abort=True)
+
+    deleted = delete_library(library_name, db_path, table_name)
+    print(f"\n✅ Deleted {deleted} chunks for library '{library_name}'.")
+
+    # Check if raw library directory exists and offer to delete
+    if not yes:
+        raw_library_dir = get_raw_data_dir(library_name)
+        if raw_library_dir.exists():
+            if typer.confirm(f"\nAlso delete raw files at {raw_library_dir}?"):
+                import shutil
+
+                shutil.rmtree(raw_library_dir)
+                print(f"✅ Deleted raw library files at {raw_library_dir}.")
 
 
 def _install_to_claude_code(project_dir: Path) -> None:

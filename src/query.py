@@ -182,5 +182,49 @@ def get_full_content(
     return f"# {title}\n\nSource: {url}\n\n{full_content}"
 
 
+def get_library_stats(
+    library_name: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> dict | None:
+    """Get statistics for a library (chunk count, unique URLs, etc.)."""
+    db = lancedb.connect(str(db_path))
+    table = db.open_table(table_name)
+    safe_name = library_name.replace("'", "''")
+    df = table.search().where(f"library_name = '{safe_name}'").to_pandas()
+
+    if df.empty:
+        return None
+
+    # Get unique titles, filter out None/empty, and take first 5
+    titles = [t for t in df["title"].unique().tolist() if t and str(t).strip()][:5]
+
+    return {
+        "library_name": library_name,
+        "chunk_count": len(df),
+        "unique_urls": df["url"].nunique(),
+        "titles": titles,
+    }
+
+
+def delete_library(
+    library_name: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> int:
+    """Delete all documents for a library. Returns count of deleted rows."""
+    db = lancedb.connect(str(db_path))
+    table = db.open_table(table_name)
+    safe_name = library_name.replace("'", "''")
+
+    # Get count before deletion
+    df = table.search().where(f"library_name = '{safe_name}'").to_pandas()
+    count = len(df)
+
+    # Delete rows
+    table.delete(f"library_name = '{safe_name}'")
+    return count
+
+
 if __name__ == "__main__":
     typer.run(main)
