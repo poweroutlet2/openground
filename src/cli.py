@@ -323,13 +323,13 @@ def _install_to_claude_code(project_dir: Path) -> None:
         print("\nPlease install Claude Code CLI first:")
         print("  https://code.claude.com/docs/en/cli")
         print("\nAlternatively, you can manually install by running:")
-        print("  openground install")
+        print("  openground install-mcp")
         print("  (without --claude-code flag)")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Error installing to Claude Code: {e}")
         print("\nYou can manually install by running:")
-        print("  openground install")
+        print("  openground install-mcp")
         print("  (without --claude-code flag)")
         sys.exit(1)
 
@@ -559,7 +559,7 @@ def _install_to_opencode(project_dir: Path) -> None:
         sys.exit(1)
 
 
-@app.command("install")
+@app.command("install-mcp")
 def install_cmd(
     claude_code: bool = typer.Option(
         False,
@@ -653,7 +653,7 @@ def install_cmd(
         print()
         print("Copy the JSON above into your MCP configuration file.")
         print(
-            "Tip: Run `openground install --claude-code`, `openground install --cursor`, or `openground install --opencode` to automatically install."
+            "Tip: Run `openground install-mcp --claude-code`, `openground install-mcp --cursor`, or `openground install-mcp --opencode` to automatically install."
         )
         print()
 

@@ -3,6 +3,7 @@ import json
 import os
 from typing import TypedDict
 from urllib.parse import urlparse
+from urllib.robotparser import RobotFileParser
 import aiohttp
 
 from aiohttp import ClientSession, ClientTimeout
@@ -51,6 +52,32 @@ async def fetch_sitemap_urls(
         print(f"Filtered to {len(urls)} URLs after keyword filtering")
 
     return urls
+
+
+async def fetch_robots_txt(session: ClientSession, base_url: str) -> RobotFileParser:
+    """Fetch and parse robots.txt from the base URL."""
+    robots_url = f"{base_url}/robots.txt"
+    rp = RobotFileParser()
+    rp.set_url(robots_url)
+
+    try:
+        async with session.get(robots_url) as response:
+            if response.status == 200:
+                content = await response.text()
+                rp.parse(content.splitlines())
+            # If 404 or other error, all URLs are allowed by default
+    except Exception as e:
+        print(f"Warning: Could not fetch robots.txt: {e}")
+
+    return rp
+
+
+def filter_urls_by_robots(
+    urls: list[str], robot_parser: RobotFileParser, user_agent: str = "*"
+) -> list[str]:
+    """Filter URLs that are allowed by robots.txt."""
+    allowed = [url for url in urls if url and robot_parser.can_fetch(user_agent, url)]
+    return allowed
 
 
 async def process_url(
@@ -165,6 +192,15 @@ async def main(
 
     async with aiohttp.ClientSession(connector=connector) as session:
         urls = await fetch_sitemap_urls(session, sitemap_url, filter_keywords)
+
+        # Filter by robots.txt
+        parsed = urlparse(sitemap_url)
+        base_url = f"{parsed.scheme}://{parsed.netloc}"
+        robot_parser = await fetch_robots_txt(session, base_url)
+        # Filter out None values before robots.txt check
+        valid_urls = [url for url in urls if url is not None]
+        urls = filter_urls_by_robots(valid_urls, robot_parser)
+        print(f"Filtered to {len(urls)} URLs after robots.txt check")
 
         semaphore = asyncio.Semaphore(concurrency_limit)
 
