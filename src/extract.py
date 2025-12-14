@@ -107,6 +107,21 @@ def parse_html(url: str, html: str, last_modified: str, library_name: str):
     )
 
     if not content:
+        # Heuristic check for JS-required pages
+        js_indicators = [
+            "BAILOUT_TO_CLIENT_SIDE_RENDERING",
+            "_next/static",
+            'id="root"',
+            'id="app"',
+            'id="__next"',
+            "You need to enable JavaScript",
+        ]
+        if any(indicator in html for indicator in js_indicators):
+            print(
+                f"Warning: Page likely requires JavaScript to render (detected SPA/CSR indicators): {url}"
+            )
+        else:
+            print(f"Warning: No content extracted for {url}")
         return None
 
     return ParsedPage(
