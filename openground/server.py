@@ -1,7 +1,7 @@
 from fastmcp import FastMCP
-from query import get_full_content, list_libraries, search, search_libraries
 
-from src.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
+from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
+from openground.query import get_full_content, list_libraries, search, search_libraries
 
 mcp = FastMCP(
     "OpenGround Documentation Search",
@@ -75,5 +75,10 @@ def get_full_content_tool(url: str) -> str:
     )
 
 
-if __name__ == "__main__":
+def run_server():
+    """Entry point for the MCP server."""
     mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    run_server()

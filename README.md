@@ -1,72 +1,139 @@
- 
 # openground
 
-Openground is a system for managing documentation in an agent-friendly manner. It has a CLI to extract and store docs from websites and exposes tools via MCP to agents for querying the data via hybrid BM25 full-text search and vector similarity search.
+Openground is a system for managing documentation in an agent-friendly manner. It has a CLI to extract and store docs from websites and exposes tools via MCP to AI coding agents for querying the data via hybrid BM25 full-text search and vector similarity search.
 
 ## Installation
 
-### Basic Installation
+Install from PyPI:
 
 ```bash
-uv pip install -e .
+pip install openground
 ```
 
-This installs the `openground` command entrypoint.
-
-### Installing the MCP server
-
-Openground can be automatically installed to various AI coding agents:
+Or with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-openground install-mcp                    # displays MCP config JSON that can be copied into your agent's config file
-openground install-mcp --opencode         # configures openground in OpenCode's MCP settings (~/.config/opencode/opencode.json)
-openground install-mcp --claude-code      # configures openground in Claude Code's MCP settings
-openground install-mcp --cursor           # configures openground in Cursor's MCP settings (~/.cursor/mcp.json)
+uv tool install openground
 ```
+
+This installs two commands:
+- `openground` - the main CLI for managing documentation
+- `openground-mcp` - the MCP server for AI agents
+
+### Installing the MCP Server
+
+After installation, configure your AI coding agent to use openground:
+
+```bash
+openground install-mcp                    # displays MCP config JSON to copy into your config
+openground install-mcp --cursor           # auto-configures Cursor
+openground install-mcp --claude-code      # auto-configures Claude Code
+openground install-mcp --opencode         # auto-configures OpenCode
+```
+
+## Quick Start
+
+1. **Extract documentation** from a website's sitemap:
+
+```bash
+openground extract \
+  --sitemap-url https://docs.example.com/sitemap.xml \
+  --library-name example-docs \
+  -f docs -f guide
+```
+
+2. **Ingest** the extracted docs into the vector database:
+
+```bash
+openground ingest --library example-docs
+```
+
+Or do both in one step:
+
+```bash
+openground extract-and-ingest \
+  --sitemap-url https://docs.example.com/sitemap.xml \
+  --library-name example-docs \
+  -y
+```
+
+3. **Query** the documentation:
+
+```bash
+openground query "how to authenticate" --library-name example-docs
+```
+
+4. **Use from AI agents** - once the MCP server is configured, your AI coding assistant can query the documentation automatically.
 
 ## Commands
 
-### Extract
+### extract
 
-Fetch and parse pages from the sitemap.
+Fetch and parse pages from a sitemap.
 
 ```bash
 openground extract \
   --sitemap-url https://docs.databricks.com/aws/en/sitemap.xml \
   --library-name databricks \
-  -f docs -f documentation -f blog
+  -f docs -f documentation
 ```
 
 Flags:
-- `--sitemap-url` / `-s`: root sitemap URL.
-- `--concurrency-limit` / `-c`: max concurrent requests.
-- `--library-name` / `-l`: name of the library/framework for this documentation.
-- `--output-dir` / `-o`: where extracted JSON files are written (optional; defaults to `raw_data/{library_name}` based on `--library-name`).
-- `--filter-keyword` / `-f`: repeatable; keywords to keep URLs (e.g., `-f docs -f blog`).
+- `--sitemap-url` / `-s`: root sitemap URL
+- `--library-name` / `-l`: name of the library/framework
+- `--filter-keyword` / `-f`: repeatable; keywords to filter URLs (e.g., `-f docs -f blog`)
+- `--concurrency-limit` / `-c`: max concurrent requests (default: 50)
+- `--output-dir` / `-o`: custom output directory (defaults to data home)
 
-### Ingest
+### ingest
 
 Chunk documents, embed, and load into LanceDB.
 
 ```bash
-openground ingest```
+openground ingest --library databricks
+```
 
-### Query
+### query
 
 Hybrid search (semantic + BM25).
 
 ```bash
-openground query "how to connect" \
-  --db-path lancedb_data \
-  --table-name documents \
-  --top-k 5
+openground query "how to connect" --library-name databricks --top-k 5
 ```
 
-Optional:
-- `--library-name` / `-l`: filter by library name.
+### list-libraries / ls
 
-## Notes
+List all ingested libraries:
 
-- Default output dir for extract is `raw_data/{library_name}` (automatically derived from `--library-name`).
-- LanceDB data defaults to `.lancedb`; table defaults to `documents`.
-- Reinstall (`uv pip install -e .`) after CLI code changes to refresh the entrypoint. 
+```bash
+openground ls
+```
+
+### remove-library / rm
+
+Remove a library from the database:
+
+```bash
+openground rm databricks
+```
+
+## Data Storage
+
+Openground stores data in a platform-appropriate location:
+
+- **Linux/macOS**: `~/.local/share/openground/`
+- **Windows**: `~/AppData/Local/openground/`
+
+You can override this by setting the `XDG_DATA_HOME` environment variable.
+
+## Development
+
+```bash
+git clone https://github.com/yourusername/openground.git
+cd openground
+uv pip install -e .
+```
+
+## License
+
+MIT

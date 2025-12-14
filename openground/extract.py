@@ -11,7 +11,7 @@ from xml.etree import ElementTree as ET
 from tqdm import tqdm
 from tqdm.asyncio import tqdm as async_tqdm
 
-from src.config import (
+from openground.config import (
     CONCURRENCY_LIMIT,
     DEFAULT_LIBRARY_NAME,
     DEFAULT_RAW_DATA_DIR,
@@ -188,7 +188,7 @@ async def main(
     output_dir: str = str(DEFAULT_RAW_DATA_DIR),
     filter_keywords: list[str] = FILTER_KEYWORDS,
 ):
-    connector = aiohttp.TCPConnector(ssl=False)
+    connector = aiohttp.TCPConnector()
 
     async with aiohttp.ClientSession(connector=connector) as session:
         urls = await fetch_sitemap_urls(session, sitemap_url, filter_keywords)

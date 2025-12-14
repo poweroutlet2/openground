@@ -10,8 +10,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-from src.extract import ParsedPage
-from src.config import (
+from openground.extract import ParsedPage
+from openground.config import (
     DEFAULT_DB_PATH,
     DEFAULT_RAW_DATA_DIR,
     DEFAULT_TABLE_NAME,

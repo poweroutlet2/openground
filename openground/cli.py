@@ -10,7 +10,7 @@ from typing import Optional
 
 import typer
 
-from src.config import (
+from openground.config import (
     CONCURRENCY_LIMIT,
     DEFAULT_LIBRARY_NAME,
     DEFAULT_DB_PATH,
@@ -58,7 +58,7 @@ def extract(
 ):
     """Run the extraction pipeline to fetch and parse pages from a sitemap."""
 
-    from src.extract import main as extract_main
+    from openground.extract import main as extract_main
 
     # If output_dir is not specified, construct it from library_name
     if output_dir is None:
@@ -125,7 +125,7 @@ def ingest(
     ),
 ):
     """Chunk documents, generate embeddings, and ingest into LanceDB."""
-    from src.ingest import ingest_to_lancedb, load_parsed_pages
+    from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
     # If library is specified, construct the path and validate it exists
     if library:
@@ -169,8 +169,8 @@ def extract_and_ingest(
     ),
 ):
     """Extract pages from a sitemap and ingest them into LanceDB in one step."""
-    from src.extract import main as extract_main
-    from src.ingest import ingest_to_lancedb, load_parsed_pages
+    from openground.extract import main as extract_main
+    from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
     # Construct output directory from library_name
     output_dir = str(get_raw_data_dir(library_name))
@@ -230,7 +230,7 @@ def query_cmd(
     top_k: int = typer.Option(5, "--top-k", "-k", help="Number of results to return."),
 ):
     """Run a hybrid search (semantic + BM25) against the LanceDB table."""
-    from src.query import search
+    from openground.query import search
 
     results_md = search(
         query=query,
@@ -249,7 +249,7 @@ def list_libraries_cmd(
     table_name: str = typer.Option(DEFAULT_TABLE_NAME, "--table-name", "-t"),
 ):
     """List available libraries stored in LanceDB."""
-    from src.query import list_libraries
+    from openground.query import list_libraries
 
     libraries = list_libraries(db_path=db_path, table_name=table_name)
     if not libraries:
@@ -287,7 +287,7 @@ def remove_library_cmd(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ):
     """Remove all documents for a library from LanceDB."""
-    from src.query import get_library_stats, delete_library
+    from openground.query import get_library_stats, delete_library
 
     stats = get_library_stats(library_name, db_path, table_name)
     if not stats:
@@ -320,10 +320,10 @@ def remove_library_cmd(
                 print(f"✅ Deleted raw library files at {raw_library_dir}.")
 
 
-def _install_to_claude_code(project_dir: Path) -> None:
+def _install_to_claude_code() -> None:
     """Install openground to Claude Code using the claude CLI."""
     try:
-        # Build the command
+        # Build the command - uses the openground-mcp entry point
         cmd = [
             "claude",
             "mcp",
@@ -334,16 +334,11 @@ def _install_to_claude_code(project_dir: Path) -> None:
             "user",
             "openground",
             "--",
-            "uv",
-            "run",
-            "python",
-            "src/server.py",
+            "openground-mcp",
         ]
 
-        # Run the command with the project directory as cwd
         result = subprocess.run(
             cmd,
-            cwd=str(project_dir),
             capture_output=True,
             text=True,
             check=False,
@@ -397,7 +392,7 @@ def _get_opencode_config_path() -> Path:
     return Path.home() / ".config" / "opencode" / "opencode.json"
 
 
-def _install_to_cursor(project_dir: Path) -> None:
+def _install_to_cursor() -> None:
     """Safely install openground to Cursor's MCP configuration."""
     config_path = _get_cursor_config_path()
 
@@ -442,11 +437,10 @@ def _install_to_cursor(project_dir: Path) -> None:
             print(f"⚠️  Warning: Could not create backup: {e}")
             print("Proceeding without backup...")
 
-    # Build new config
+    # Build new config - uses the openground-mcp entry point
     new_server_config = {
-        "command": "uv",
-        "args": ["run", "python", "src/server.py"],
-        "cwd": str(project_dir),
+        "command": "openground-mcp",
+        "args": [],
     }
 
     # Merge into existing config
@@ -496,7 +490,7 @@ def _install_to_cursor(project_dir: Path) -> None:
         sys.exit(1)
 
 
-def _install_to_opencode(project_dir: Path) -> None:
+def _install_to_opencode() -> None:
     """Safely install openground to OpenCode's MCP configuration."""
     config_path = _get_opencode_config_path()
 
@@ -541,17 +535,10 @@ def _install_to_opencode(project_dir: Path) -> None:
             print(f"⚠️  Warning: Could not create backup: {e}")
             print("Proceeding without backup...")
 
-    # Build new config
+    # Build new config - uses the openground-mcp entry point
     new_server_config = {
         "type": "local",
-        "command": [
-            "uv",
-            "run",
-            "--directory",
-            str(project_dir),
-            "python",
-            "src/server.py",
-        ],
+        "command": ["openground-mcp"],
         "enabled": True,
     }
 
@@ -626,36 +613,21 @@ def install_cmd(
     ),
 ):
     """Generate MCP server configuration JSON for agents."""
-    # Auto-detect the project directory
-    project_dir = Path(__file__).resolve().parent.parent
-
     if claude_code:
-        _install_to_claude_code(project_dir)
+        _install_to_claude_code()
     elif cursor:
-        _install_to_cursor(project_dir)
+        _install_to_cursor()
     elif opencode:
-        _install_to_opencode(project_dir)
+        _install_to_opencode()
     else:
         # Default behavior: show JSON configuration
         if wsl:
-            # For WSL, convert path to ~/... format if it's in home directory
-            home = Path.home()
-            if project_dir.is_relative_to(home):
-                relative_path = project_dir.relative_to(home)
-                wsl_path = f"~/{relative_path}"
-            else:
-                wsl_path = str(project_dir)
-
+            # For WSL, use wsl.exe wrapper to call the entry point
             config = {
                 "mcpServers": {
                     "openground": {
                         "command": "wsl.exe",
-                        "args": [
-                            "zsh",
-                            "-c",
-                            "-i",
-                            f"cd {wsl_path} && uv run python src/server.py",
-                        ],
+                        "args": ["openground-mcp"],
                     }
                 }
             }
@@ -663,9 +635,8 @@ def install_cmd(
             config = {
                 "mcpServers": {
                     "openground": {
-                        "command": "uv",
-                        "args": ["run", "python", "src/server.py"],
-                        "cwd": str(project_dir),
+                        "command": "openground-mcp",
+                        "args": [],
                     }
                 }
             }

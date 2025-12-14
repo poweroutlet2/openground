@@ -6,8 +6,8 @@ import lancedb
 import typer
 from sentence_transformers import SentenceTransformer
 
-from src.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
-from src.ingest import get_device, load_model
+from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
+from openground.ingest import get_device, load_model
 
 # Cache the model so repeated queries avoid reloading
 _MODEL_CACHE: Optional[SentenceTransformer] = None
