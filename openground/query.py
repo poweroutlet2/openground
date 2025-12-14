@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import Optional
 
 import lancedb
-import typer
 from sentence_transformers import SentenceTransformer
 
 from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME, get_effective_config
@@ -40,7 +39,7 @@ def _escape_sql_string(value: str) -> str:
 def _get_model() -> tuple[SentenceTransformer, str]:
     global _MODEL_CACHE, _DEVICE_CACHE, _MODEL_NAME_CACHE
     config = get_effective_config()
-    model_name = config["embedding_model"]
+    model_name = config["ingestion"]["embedding_model"]
 
     if _MODEL_CACHE is None or _MODEL_NAME_CACHE != model_name:
         device = get_device()
@@ -78,8 +77,11 @@ def search(
         library_name: Optional filter on library name column.
         top_k: Number of results to return.
     """
-    model, _device = _get_model()
     db = lancedb.connect(str(db_path))
+    if table_name not in db.table_names():
+        return "Found 0 matches."
+
+    model, _device = _get_model()
     table = db.open_table(table_name)
 
     query_vec = _embed_query(model, query)
@@ -131,6 +133,8 @@ def list_libraries(
     Return sorted unique non-null library names from the table.
     """
     db = lancedb.connect(str(db_path))
+    if table_name not in db.table_names():
+        return []
     table = db.open_table(table_name)
     df = table.to_pandas()
 
@@ -172,6 +176,8 @@ def get_full_content(
         Formatted markdown string with title, source URL, and full content.
     """
     db = lancedb.connect(str(db_path))
+    if table_name not in db.table_names():
+        return f"No content found for URL: {url}"
     table = db.open_table(table_name)
 
     # Query all chunks for this URL
@@ -196,6 +202,8 @@ def get_library_stats(
 ) -> dict | None:
     """Get statistics for a library (chunk count, unique URLs, etc.)."""
     db = lancedb.connect(str(db_path))
+    if table_name not in db.table_names():
+        return None
     table = db.open_table(table_name)
     safe_name = _escape_sql_string(library_name)
     df = table.search().where(f"library_name = '{safe_name}'").to_pandas()
@@ -221,6 +229,8 @@ def delete_library(
 ) -> int:
     """Delete all documents for a library. Returns count of deleted rows."""
     db = lancedb.connect(str(db_path))
+    if table_name not in db.table_names():
+        return 0
     table = db.open_table(table_name)
     safe_name = _escape_sql_string(library_name)
 

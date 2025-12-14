@@ -169,8 +169,8 @@ def ingest(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         batch_size=batch_size,
-        embedding_model=config["embedding_model"],
-        embedding_dimensions=config["embedding_dimensions"],
+        embedding_model=config["ingestion"]["embedding_model"],
+        embedding_dimensions=config["ingestion"]["embedding_dimensions"],
     )
 
 
@@ -248,8 +248,8 @@ def extract_and_ingest(
         chunk_size=config["ingestion"]["chunk_size"],
         chunk_overlap=config["ingestion"]["chunk_overlap"],
         batch_size=config["ingestion"]["batch_size"],
-        embedding_model=config["embedding_model"],
-        embedding_dimensions=config["embedding_dimensions"],
+        embedding_model=config["ingestion"]["embedding_model"],
+        embedding_dimensions=config["ingestion"]["embedding_dimensions"],
     )
 
 
@@ -317,12 +317,12 @@ def list_raw_libraries_cmd():
     """List available libraries in the raw_data directory."""
     raw_data_dir = get_data_home() / "raw_data"
     if not raw_data_dir.exists():
-        print(f"Directory {raw_data_dir} does not exist.")
+        print("No libraries found in raw_data.")
         return
 
     libraries = [d.name for d in raw_data_dir.iterdir() if d.is_dir()]
     if not libraries:
-        print(f"No libraries found in {raw_data_dir}.")
+        print("No libraries found in raw_data.")
         return
 
     print("Available libraries in raw_data:")

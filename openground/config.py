@@ -31,12 +31,17 @@ CONCURRENCY_LIMIT = 50
 FILTER_KEYWORDS = ["docs", "documentation", "blog"]
 
 
+DEFAULT_RAW_DATA_DIR_BASE = get_data_home() / "raw_data"
+
+
 def get_raw_data_dir(library_name: str) -> Path:
     """Construct the path to the raw data directory for a given library name."""
-    return get_data_home() / "raw_data" / library_name.lower()
+    config = get_effective_config()
+    raw_data_dir_base = Path(config.get("raw_data_dir", str(DEFAULT_RAW_DATA_DIR_BASE)))
+    return raw_data_dir_base / library_name.lower()
 
 
-DEFAULT_RAW_DATA_DIR = get_raw_data_dir(DEFAULT_LIBRARY_NAME)
+DEFAULT_RAW_DATA_DIR = DEFAULT_RAW_DATA_DIR_BASE / DEFAULT_LIBRARY_NAME.lower()
 
 # Ingestion / query defaults
 DEFAULT_DB_PATH = get_data_home() / "lancedb"
@@ -130,6 +135,7 @@ def get_default_config() -> dict[str, Any]:
     return {
         "db_path": str(DEFAULT_DB_PATH),
         "table_name": DEFAULT_TABLE_NAME,
+        "raw_data_dir": str(DEFAULT_RAW_DATA_DIR_BASE),
         "extraction": {
             "concurrency_limit": CONCURRENCY_LIMIT,
         },
@@ -137,12 +143,12 @@ def get_default_config() -> dict[str, Any]:
             "batch_size": DEFAULT_BATCH_SIZE,
             "chunk_size": DEFAULT_CHUNK_SIZE,
             "chunk_overlap": DEFAULT_CHUNK_OVERLAP,
+            "embedding_model": EMBEDDING_MODEL,
+            "embedding_dimensions": EMBEDDING_DIMENSIONS,
         },
         "query": {
             "top_k": DEFAULT_TOP_K,
         },
-        "embedding_model": EMBEDDING_MODEL,
-        "embedding_dimensions": EMBEDDING_DIMENSIONS,
     }
 
 
@@ -156,6 +162,8 @@ def _merge_with_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
         merged["db_path"] = user_config["db_path"]
     if "table_name" in user_config:
         merged["table_name"] = user_config["table_name"]
+    if "raw_data_dir" in user_config:
+        merged["raw_data_dir"] = user_config["raw_data_dir"]
 
     if "extraction" in user_config:
         merged["extraction"].update(user_config["extraction"])
@@ -163,10 +171,6 @@ def _merge_with_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
         merged["ingestion"].update(user_config["ingestion"])
     if "query" in user_config:
         merged["query"].update(user_config["query"])
-    if "embedding_model" in user_config:
-        merged["embedding_model"] = user_config["embedding_model"]
-    if "embedding_dimensions" in user_config:
-        merged["embedding_dimensions"] = user_config["embedding_dimensions"]
 
     return merged
 
