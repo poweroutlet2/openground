@@ -49,6 +49,85 @@ def ensure_config_exists(ctx: typer.Context):
         print(f"✓ Config file created at {config_path}\n")
 
 
+@app.command("extract-and-ingest")
+def extract_and_ingest(
+    library: str = typer.Option(
+        ..., "--library", "-l", help="Name of the library/framework."
+    ),
+    sitemap_url: str = typer.Option(
+        ..., "--sitemap-url", "-s", help="Root sitemap URL to crawl."
+    ),
+    filter_keywords: list[str] = typer.Option(
+        [],
+        "--filter-keyword",
+        "-f",
+        help="Keyword filter applied to sitemap URLs. Can be specified multiple times (e.g., -f docs -f blog).",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt between extract and ingest.",
+    ),
+):
+    """Extract pages from a sitemap and ingest them into the local db in one step."""
+    from openground.extract import main as extract_main
+    from openground.ingest import ingest_to_lancedb, load_parsed_pages
+
+    # Get config
+    config = get_effective_config()
+
+    # Construct output directory from library
+    output_dir = get_raw_data_dir(library)
+
+    async def _run_extract():
+        await extract_main(
+            sitemap_url=sitemap_url,
+            concurrency_limit=config["extraction"]["concurrency_limit"],
+            library_name=library,
+            output_dir=output_dir,
+            filter_keywords=filter_keywords,
+        )
+
+    asyncio.run(_run_extract())
+
+    data_dir = get_raw_data_dir(library)
+    if not data_dir.exists():
+        raise typer.BadParameter(
+            f"Extraction completed but data directory not found at {data_dir}."
+        )
+
+    json_files = list(data_dir.glob("*.json"))
+    page_count = len(json_files)
+    print(f"\n✅ Extraction complete: {page_count} pages extracted to {data_dir}")
+
+    if not yes:
+        print("\nPress Enter to continue with ingestion, or Ctrl+C to exit...")
+        try:
+            input()
+        except KeyboardInterrupt:
+            print("\n❌ Cancelled by user.")
+            raise typer.Abort()
+
+    print("\n🚀 Starting ingestion...")
+    pages = load_parsed_pages(data_dir)
+
+    # Get db_path and table_name from config
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+
+    ingest_to_lancedb(
+        pages=pages,
+        db_path=db_path,
+        table_name=table_name,
+        chunk_size=config["ingestion"]["chunk_size"],
+        chunk_overlap=config["ingestion"]["chunk_overlap"],
+        batch_size=config["ingestion"]["batch_size"],
+        embedding_model=config["ingestion"]["embedding_model"],
+        embedding_dimensions=config["ingestion"]["embedding_dimensions"],
+    )
+
+
 @app.command()
 def extract(
     sitemap_url: str = typer.Option(
@@ -92,7 +171,7 @@ def extract(
     async def _run():
         await extract_main(
             sitemap_url=sitemap_url,
-            concurrency_limit=concurrency_limit,
+            concurrency_limit=concurrency_limit,  # type: ignore
             library_name=library,
             output_dir=output_dir,
             filter_keywords=filter_keywords,
@@ -166,88 +245,9 @@ def ingest(
         pages=pages,
         db_path=db_path,
         table_name=table_name,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        batch_size=batch_size,
-        embedding_model=config["ingestion"]["embedding_model"],
-        embedding_dimensions=config["ingestion"]["embedding_dimensions"],
-    )
-
-
-@app.command("extract-and-ingest")
-def extract_and_ingest(
-    library: str = typer.Option(
-        ..., "--library", "-l", help="Name of the library/framework."
-    ),
-    sitemap_url: str = typer.Option(
-        ..., "--sitemap-url", "-s", help="Root sitemap URL to crawl."
-    ),
-    filter_keywords: list[str] = typer.Option(
-        [],
-        "--filter-keyword",
-        "-f",
-        help="Keyword filter applied to sitemap URLs. Can be specified multiple times (e.g., -f docs -f blog).",
-    ),
-    yes: bool = typer.Option(
-        False,
-        "--yes",
-        "-y",
-        help="Skip confirmation prompt between extract and ingest.",
-    ),
-):
-    """Extract pages from a sitemap and ingest them into LanceDB in one step."""
-    from openground.extract import main as extract_main
-    from openground.ingest import ingest_to_lancedb, load_parsed_pages
-
-    # Get config
-    config = get_effective_config()
-
-    # Construct output directory from library
-    output_dir = get_raw_data_dir(library)
-
-    async def _run_extract():
-        await extract_main(
-            sitemap_url=sitemap_url,
-            concurrency_limit=config["extraction"]["concurrency_limit"],
-            library_name=library,
-            output_dir=output_dir,
-            filter_keywords=filter_keywords,
-        )
-
-    asyncio.run(_run_extract())
-
-    data_dir = get_raw_data_dir(library)
-    if not data_dir.exists():
-        raise typer.BadParameter(
-            f"Extraction completed but data directory not found at {data_dir}."
-        )
-
-    json_files = list(data_dir.glob("*.json"))
-    page_count = len(json_files)
-    print(f"\n✅ Extraction complete: {page_count} pages extracted to {data_dir}")
-
-    if not yes:
-        print("\nPress Enter to continue with ingestion, or Ctrl+C to exit...")
-        try:
-            input()
-        except KeyboardInterrupt:
-            print("\n❌ Cancelled by user.")
-            raise typer.Abort()
-
-    print("\n🚀 Starting ingestion...")
-    pages = load_parsed_pages(data_dir)
-
-    # Get db_path and table_name from config
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-
-    ingest_to_lancedb(
-        pages=pages,
-        db_path=db_path,
-        table_name=table_name,
-        chunk_size=config["ingestion"]["chunk_size"],
-        chunk_overlap=config["ingestion"]["chunk_overlap"],
-        batch_size=config["ingestion"]["batch_size"],
+        chunk_size=chunk_size,  # type: ignore
+        chunk_overlap=chunk_overlap,  # type: ignore
+        batch_size=batch_size,  # type: ignore
         embedding_model=config["ingestion"]["embedding_model"],
         embedding_dimensions=config["ingestion"]["embedding_dimensions"],
     )
@@ -262,11 +262,11 @@ def query_cmd(
         "-l",
         help="Optional library name filter.",
     ),
-    top_k: int = typer.Option(
+    top_k: int | None = typer.Option(
         None, "--top-k", "-k", help="Number of results to return."
     ),
 ):
-    """Run a hybrid search (semantic + BM25) against the LanceDB table."""
+    """Run a hybrid search (semantic + BM25) against the local db."""
     from openground.query import search
 
     # Get config
@@ -285,7 +285,7 @@ def query_cmd(
         db_path=db_path,
         table_name=table_name,
         library_name=library,
-        top_k=top_k,
+        top_k=top_k,  # type: ignore
     )
     print(results_md)
 
@@ -293,7 +293,7 @@ def query_cmd(
 @app.command("list-libraries")
 @app.command("ls")
 def list_libraries_cmd():
-    """List available libraries stored in LanceDB."""
+    """List available libraries stored in the local db."""
     from openground.query import list_libraries
 
     # Get config
@@ -336,7 +336,7 @@ def remove_library_cmd(
     library_name: str = typer.Argument(..., help="Name of the library to remove."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ):
-    """Remove all documents for a library from LanceDB."""
+    """Remove all documents for a library from the local db."""
     from openground.query import get_library_stats, delete_library
 
     # Get config
