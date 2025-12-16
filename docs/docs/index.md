@@ -1,58 +1,16 @@
-# openground
+# Openground
 
-[![PyPI version](https://badge.fury.io/py/openground.svg)](https://badge.fury.io/py/openground)
+Openground is a system for managing documentation in an agent-friendly manner. It has a CLI to extract and store docs from websites and exposes tools via MCP to AI coding agents for querying the data via hybrid BM25 full-text search and vector similarity search.
 
-Openground is a system for managing documentation in an agent-friendly manner. It extracts and stores docs from websites, then exposes them to AI coding agents via MCP for querying with hybrid BM25 full-text search and vector similarity search.
+## Why Openground?
 
-**[📚 Full Documentation](docs/)**
+Modern AI coding assistants need access to up-to-date documentation to provide accurate help. Openground bridges this gap by:
 
-## Quick Start
+- **Extracting** documentation from websites via sitemaps
+- **Indexing** content with hybrid search (semantic + BM25)
+- **Serving** documentation to AI agents through the Model Context Protocol (MCP)
 
-### Installation
-
-```bash
-pip install openground
-```
-
-Or with [uv](https://docs.astral.sh/uv/):
-
-```bash
-uv tool install openground
-```
-
-### Index Documentation
-
-Extract and ingest documentation in one command:
-
-```bash
-openground extract-and-ingest \
-  --sitemap-url https://docs.example.com/sitemap.xml \
-  --library example-docs \
-  -y
-```
-
-### Query from CLI
-
-```bash
-openground query "how to authenticate" --library example-docs
-```
-
-### Use with AI Agents
-
-Configure your AI coding assistant to use openground via MCP:
-
-```bash
-# For Cursor
-openground install-mcp --cursor
-
-# For Claude Code
-openground install-mcp --claude-code
-
-# For OpenCode
-openground install-mcp --opencode
-```
-
-Now your AI assistant can search your documentation automatically!
+Your AI assistant can then query your project's documentation directly, getting accurate, context-aware answers.
 
 ## Architecture
 
@@ -103,54 +61,48 @@ Now your AI assistant can search your documentation automatically!
                    └────────────┘                  └────────────────┘
 ```
 
-## Documentation
+## Data Flow
 
-- **[Getting Started](docs/docs/getting-started.md)** - Installation and quick start guide
-- **[Configuration](docs/docs/configuration.md)** - Customize chunking, embedding models, and more
-- **[CLI Commands](docs/docs/commands/)** - Complete command reference
-- **[MCP Integration](docs/docs/mcp-integration.md)** - Connect to AI coding assistants
+### 1. Extract (`openground extract`)
+- Parses sitemap XML from documentation websites
+- Downloads and scrapes page content
+- Saves content in structured JSON format into the raw data directory
+- Uses aiohttp and trafilatura for efficient web scraping
 
-## Features
+### 2. Ingest (`openground ingest`)
+- Loads JSON files from the raw data directory
+- Splits documents into chunks with configurable overlap
+- Generates embeddings using a local model (sentence-transformers)
+- Stores vectors and creates BM25 full-text search index in LanceDB
+- Uses langchain_text_splitters and sentence_transformers
 
-- **Extract** documentation from any website with a sitemap
-- **Hybrid search** combining semantic similarity (vector embeddings) and BM25 keyword matching
-- **Local-first** - all processing happens on your machine, no API calls
-- **MCP server** for seamless integration with AI coding assistants
-- **Configurable** chunking, embedding models, and search parameters
+### 3. Query (CLI or MCP)
+- Performs hybrid search combining semantic similarity and BM25 ranking
+- Returns ranked results with source URLs and relevance scores
+- Full page content can be retrieved for deeper context
 
-## Example Workflow
-
-Here's how to index the Databricks documentation and make it available to Claude Code:
+## Quick Example
 
 ```bash
-# 1. Install openground
+# Install openground
 pip install openground
 
-# 2. Extract and ingest Databricks docs
+# Extract and ingest documentation
 openground extract-and-ingest \
-  --sitemap-url https://docs.databricks.com/aws/en/sitemap.xml \
-  --library databricks \
-  -f docs -f documentation \
+  --sitemap-url https://docs.example.com/sitemap.xml \
+  --library example-docs \
   -y
 
-# 3. Configure Claude Code to use openground
-openground install-mcp --claude-code
+# Query from CLI
+openground query "how to authenticate" --library example-docs
 
-# 4. Restart Claude Code
-# Now you can ask: "How do I create a Delta table in Databricks?"
-# Claude will search the Databricks docs automatically!
+# Or use with AI agents via MCP
+openground install-mcp --cursor
 ```
 
-## Development
+## Next Steps
 
-To contribute or work on openground locally:
-
-```bash
-git clone https://github.com/yourusername/openground.git
-cd openground
-uv pip install -e .
-```
-
-## License
-
-MIT
+- [Getting Started](getting-started.md) - Install and configure openground
+- [Configuration](configuration.md) - Customize settings for your needs
+- [Commands](commands/index.md) - Detailed command reference
+- [MCP Integration](mcp-integration.md) - Connect to AI coding assistants

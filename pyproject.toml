@@ -59,4 +59,9 @@ build-backend = "hatchling.build"
 packages = ["openground"]
 
 [dependency-groups]
-dev = ["ipynb", "jupyter", "ruff>=0.14.8"]
+dev = [
+    "ipynb",
+    "jupyter",
+    "mkdocs>=1.6.1",
+    "ruff>=0.14.8",
+]
