@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 from pathlib import Path
 from typing import TypedDict
 from urllib.parse import urlparse
@@ -182,7 +181,7 @@ async def save_results(results: list[ParsedPage | None], output_dir: Path):
             json.dump(result, f, indent=2)
 
 
-async def main(
+async def extract_pages(
     sitemap_url: str = SITEMAP_URL,
     concurrency_limit: int = CONCURRENCY_LIMIT,
     library_name: str = DEFAULT_LIBRARY_NAME,
@@ -225,7 +224,3 @@ async def main(
         await save_results(results, output_dir)
         valid_count = sum(1 for r in results if r is not None)
         print(f"🎉 Saved {valid_count} pages!")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

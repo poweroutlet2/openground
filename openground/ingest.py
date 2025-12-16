@@ -5,16 +5,12 @@ from collections.abc import Iterable
 import lancedb
 import pyarrow as pa
 import torch
-import typer
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 from openground.extract import ParsedPage
 from openground.config import (
-    DEFAULT_DB_PATH,
-    DEFAULT_RAW_DATA_DIR,
-    DEFAULT_TABLE_NAME,
     EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL,
 )
@@ -176,41 +172,3 @@ def ingest_to_lancedb(
         print(f"FTS index creation skipped: {exc}")
 
     print(f"🎉 Ingested {len(all_records)} chunks into table '{table_name}'.")
-
-
-def main(
-    data_dir: Path = typer.Option(
-        DEFAULT_RAW_DATA_DIR,
-        "--data-dir",
-        "-d",
-        help="Directory containing parsed page files.",
-    ),
-    db_path: Path = typer.Option(
-        DEFAULT_DB_PATH, "--db-path", "-b", help="Directory for LanceDB storage."
-    ),
-    table_name: str = typer.Option(
-        DEFAULT_TABLE_NAME, "--table-name", "-t", help="LanceDB table name."
-    ),
-    chunk_size: int = typer.Option(
-        1000, "--chunk-size", "-c", help="Chunk size for splitting documents."
-    ),
-    chunk_overlap: int = typer.Option(
-        200, "--chunk-overlap", "-o", help="Overlap size between chunks."
-    ),
-    batch_size: int = typer.Option(
-        32, "--batch-size", "-bs", help="Batch size for embedding generation."
-    ),
-):
-    pages = load_parsed_pages(data_dir)
-    ingest_to_lancedb(
-        pages=pages,
-        db_path=db_path,
-        table_name=table_name,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        batch_size=batch_size,
-    )
-
-
-if __name__ == "__main__":
-    typer.run(main)

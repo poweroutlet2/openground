@@ -71,7 +71,7 @@ def extract_and_ingest(
     ),
 ):
     """Extract pages from a sitemap and ingest them into the local db in one step."""
-    from openground.extract import main as extract_main
+    from openground.extract import extract_pages as extract_main
     from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
     # Get config
@@ -156,7 +156,7 @@ def extract(
 ):
     """Run the extraction pipeline to fetch and parse pages from a sitemap."""
 
-    from openground.extract import main as extract_main
+    from openground.extract import extract_pages as extract_main
 
     # Get config
     config = get_effective_config()
@@ -210,7 +210,7 @@ def ingest(
         min=0,
     ),
 ):
-    """Chunk documents, generate embeddings, and ingest into LanceDB."""
+    """Chunk documents, generate embeddings, and ingest into the local db."""
     from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
     # Get config
