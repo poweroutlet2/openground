@@ -60,12 +60,12 @@ openground extract -s URL -l NAME -f docs -f documentation
 
 This is useful for:
 
-- Excluding blog posts or marketing pages
-- Focusing on specific documentation sections
-- Reducing extraction time and storage
+-   Excluding blog posts or marketing pages
+-   Focusing on specific documentation sections
+-   Reducing extraction time and storage
 
 !!! tip
-    Start without filters to see what URLs are available, then re-run with filters if needed.
+Start without filters to see what URLs are available, then re-run with filters if needed.
 
 #### `--concurrency-limit`, `-c`
 
@@ -77,9 +77,9 @@ openground extract -s URL -l NAME -c 20
 
 Lower this if:
 
-- You're experiencing timeouts
-- The server is rate-limiting your requests
-- You have limited bandwidth
+-   You're experiencing timeouts
+-   The server is rate-limiting your requests
+-   You have limited bandwidth
 
 Higher values (up to 100) may be faster for large sites, but use more resources.
 
@@ -127,10 +127,10 @@ Each page becomes a JSON file with:
 
 ```json
 {
-  "url": "https://docs.example.com/guide/intro",
-  "title": "Introduction",
-  "content": "Full page content...",
-  "library": "example-docs"
+    "url": "https://docs.example.com/guide/intro",
+    "title": "Introduction",
+    "content": "Full page content...",
+    "library": "example-docs"
 }
 ```
 
@@ -149,38 +149,37 @@ CLI flags override config values. See [Configuration](../configuration.md) for m
 After extraction:
 
 1. **Ingest the data**: [`openground ingest --library NAME`](ingest.md)
-2. **Or use the combined command**: `openground extract-and-ingest` to do both steps at once
+2. **Or use the combined command**: [`openground add`](add.md) to do both steps at once
 
 ## Troubleshooting
 
 ### Extraction is Slow
 
-- Increase `--concurrency-limit` (try 100)
-- Check your internet connection
-- Some sites may have slow response times
+-   Increase `--concurrency-limit` (try 100)
+-   Check your internet connection
+-   Some sites may have slow response times
 
 ### Some Pages Not Extracted
 
-- Check that the sitemap URL is correct
-- Verify your filter keywords aren't too restrictive
-- Some pages in the sitemap may not be accessible
+-   Check that the sitemap URL is correct
+-   Verify your filter keywords aren't too restrictive
+-   Some pages in the sitemap may not be accessible
 
 ### Timeouts
 
-- Reduce `--concurrency-limit` (try 10-20)
-- The server may be rate-limiting you
-- Try again later
+-   Reduce `--concurrency-limit` (try 10-20)
+-   The server may be rate-limiting you
+-   Try again later
 
 ### Invalid Sitemap URL
 
 Make sure you're using the sitemap XML URL, not the main site URL. Check:
 
-- `https://example.com/sitemap.xml`
-- `https://example.com/sitemap_index.xml`
-- Look in `https://example.com/robots.txt` for the sitemap URL
+-   `https://example.com/sitemap.xml`
+-   `https://example.com/sitemap_index.xml`
+-   Look in `https://example.com/robots.txt` for the sitemap URL
 
 ## See Also
 
-- [ingest](ingest.md) - Process extracted files
-- [Commands Overview](index.md) - All commands
-
+-   [ingest](ingest.md) - Process extracted files
+-   [Commands Overview](index.md) - All commands

@@ -88,7 +88,7 @@ Your AI assistant can then query your project's documentation directly, getting 
 pip install openground
 
 # Extract and ingest documentation
-openground extract-and-ingest \
+openground add \
   --sitemap-url https://docs.example.com/sitemap.xml \
   --library example-docs \
   -y

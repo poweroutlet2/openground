@@ -66,7 +66,7 @@ Output:
 No libraries found in the database.
 
 To add a library:
-  openground extract-and-ingest --sitemap-url URL --library NAME -y
+  openground add --sitemap-url URL --library NAME -y
 ```
 
 ## Use Cases
@@ -128,7 +128,7 @@ After viewing libraries:
 
 - **Query a library**: [`openground query "search" --library NAME`](query.md)
 - **Remove a library**: [`openground rm NAME`](remove-library.md)
-- **Add a new library**: [`openground extract-and-ingest -s URL -l NAME`](index.md)
+- **Add a new library**: [`openground add -s URL -l NAME`](index.md)
 
 ## Configuration
 

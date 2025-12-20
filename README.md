@@ -25,7 +25,7 @@ uv tool install openground
 Extract and ingest documentation in one command:
 
 ```bash
-openground extract-and-ingest \
+openground add \
   --sitemap-url https://docs.example.com/sitemap.xml \
   --library example-docs \
   -y
@@ -64,7 +64,7 @@ Now your AI assistant can search your documentation automatically!
           │  ┌───────────────────────────────────────────────────────────────────────┐  │
           │  │                           INGESTION PIPELINE                          │  │
           │  │                                                                       │  │
-          │  │                                                                       |  |  
+          │  │                                                                       |  |
           │  │   ┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐     │  │
           │  │   │   EXTRACT   │     │   INGEST    │     │    LOCAL LANCEDB    │     │  │
           │  │   │  • Sitemap  │     │  • Chunking │     │  • Vector Store     │     │  │
@@ -105,18 +105,18 @@ Now your AI assistant can search your documentation automatically!
 
 ## Documentation
 
-- **[Getting Started](docs/docs/getting-started.md)** - Installation and quick start guide
-- **[Configuration](docs/docs/configuration.md)** - Customize chunking, embedding models, and more
-- **[CLI Commands](docs/docs/commands/)** - Complete command reference
-- **[MCP Integration](docs/docs/mcp-integration.md)** - Connect to AI coding assistants
+-   **[Getting Started](docs/docs/getting-started.md)** - Installation and quick start guide
+-   **[Configuration](docs/docs/configuration.md)** - Customize chunking, embedding models, and more
+-   **[CLI Commands](docs/docs/commands/)** - Complete command reference
+-   **[MCP Integration](docs/docs/mcp-integration.md)** - Connect to AI coding assistants
 
 ## Features
 
-- **Extract** documentation from any website with a sitemap
-- **Hybrid search** combining semantic similarity (vector embeddings) and BM25 keyword matching
-- **Local-first** - all processing happens on your machine, no API calls
-- **MCP server** for seamless integration with AI coding assistants
-- **Configurable** chunking, embedding models, and search parameters
+-   **Extract** documentation from any website with a sitemap
+-   **Hybrid search** combining semantic similarity (vector embeddings) and BM25 keyword matching
+-   **Local-first** - all processing happens on your machine, no API calls
+-   **MCP server** for seamless integration with AI coding assistants
+-   **Configurable** chunking, embedding models, and search parameters
 
 ## Example Workflow
 
@@ -127,7 +127,7 @@ Here's how to index the Databricks documentation and make it available to Claude
 pip install openground
 
 # 2. Extract and ingest Databricks docs
-openground extract-and-ingest \
+openground add \
   --sitemap-url https://docs.databricks.com/aws/en/sitemap.xml \
   --library databricks \
   -f docs -f documentation \

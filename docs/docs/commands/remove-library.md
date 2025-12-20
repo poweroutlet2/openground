@@ -141,7 +141,7 @@ rmdir /s /q "%LOCALAPPDATA%\openground\raw_data\library-name"
 openground rm docs -y
 
 # Extract and ingest new version
-openground extract-and-ingest -s URL -l docs -y
+openground add -s URL -l docs -y
 ```
 
 ### Cleaning Up Test Data

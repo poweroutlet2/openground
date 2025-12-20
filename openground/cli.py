@@ -49,8 +49,8 @@ def ensure_config_exists(ctx: typer.Context):
         print(f"✓ Config file created at {config_path}\n")
 
 
-@app.command("extract-and-ingest")
-def extract_and_ingest(
+@app.command("add")
+def add(
     library: str = typer.Option(
         ..., "--library", "-l", help="Name of the library/framework."
     ),
@@ -330,7 +330,7 @@ def list_raw_libraries_cmd():
         print(f"  - {lib}")
 
 
-@app.command("remove-library")
+@app.command("remove")
 @app.command("rm")
 def remove_library_cmd(
     library_name: str = typer.Argument(..., help="Name of the library to remove."),

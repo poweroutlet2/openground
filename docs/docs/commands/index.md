@@ -52,11 +52,11 @@ openground config get KEY
 
 ## Combined Commands
 
-### extract-and-ingest
+### [add](add.md)
 Extract and ingest in one step (combines `extract` and `ingest`).
 
 ```bash
-openground extract-and-ingest \
+openground add \
   --sitemap-url URL \
   --library NAME \
   -y
@@ -86,7 +86,7 @@ See [MCP Integration](../mcp-integration.md) for details.
 | `ls` | List libraries | None |
 | `rm` | Remove library | library name, `-y` (skip confirm) |
 | `config` | Manage settings | `show`, `get`, `set`, `reset`, `path` |
-| `extract-and-ingest` | Extract + ingest | All extract and ingest flags |
+| `add` | Extract + ingest | All extract and ingest flags |
 | `install-mcp` | Setup MCP server | `--cursor`, `--claude-code`, `--opencode` |
 
 ## Common Patterns
@@ -95,7 +95,7 @@ See [MCP Integration](../mcp-integration.md) for details.
 
 ```bash
 # Extract, ingest, and verify
-openground extract-and-ingest -s URL -l NAME -y
+openground add -s URL -l NAME -y
 openground ls
 openground query "test query" -l NAME
 ```
@@ -105,7 +105,7 @@ openground query "test query" -l NAME
 ```bash
 # Remove old, extract new
 openground rm OLD_NAME -y
-openground extract-and-ingest -s URL -l NEW_NAME -y
+openground add -s URL -l NEW_NAME -y
 ```
 
 ### Change Chunking Strategy
@@ -133,6 +133,7 @@ Browse the detailed documentation for each command:
 
 - [extract](extract.md) - Detailed extraction options
 - [ingest](ingest.md) - Chunking and embedding configuration
+- [add](add.md) - Extract and ingest in one step
 - [query](query.md) - Search and filtering
 - [ls](list-libraries.md) - Listing libraries
 - [rm](remove-library.md) - Removing libraries

@@ -36,7 +36,7 @@ Let's walk through indexing documentation from a website and querying it.
 The fastest way to get started is with the combined command:
 
 ```bash
-openground extract-and-ingest \
+openground add \
   --sitemap-url https://docs.example.com/sitemap.xml \
   --library example-docs \
   -y
@@ -52,7 +52,7 @@ This will:
 !!! tip "Filtering URLs"
     Add `-f` flags to only extract URLs containing specific keywords:
     ```bash
-    openground extract-and-ingest \
+    openground add \
       --sitemap-url https://docs.databricks.com/aws/en/sitemap.xml \
       --library databricks \
       -f docs -f guide \

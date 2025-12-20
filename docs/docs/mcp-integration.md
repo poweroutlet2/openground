@@ -24,7 +24,7 @@ uv tool install openground
 ### 2. Ingest Documentation
 
 ```bash
-openground extract-and-ingest \
+openground add \
   --sitemap-url https://docs.example.com/sitemap.xml \
   --library example-docs \
   -y
@@ -265,7 +265,7 @@ openground ls
 If empty, ingest some documentation:
 
 ```bash
-openground extract-and-ingest -s URL -l NAME -y
+openground add -s URL -l NAME -y
 ```
 
 ### Permission Errors
@@ -301,7 +301,7 @@ When you add new documentation libraries, they're immediately available to the M
 
 ```bash
 # Add a new library
-openground extract-and-ingest -s URL -l new-docs -y
+openground add -s URL -l new-docs -y
 
 # No restart needed - AI can now search it
 ```
@@ -315,7 +315,7 @@ To update existing documentation:
 openground rm old-docs -y
 
 # Extract and ingest new version
-openground extract-and-ingest -s URL -l old-docs -y
+openground add -s URL -l old-docs -y
 ```
 
 The MCP server uses the database, so updates are immediate.
@@ -326,8 +326,8 @@ The AI can search across all ingested libraries or filter to specific ones:
 
 ```bash
 # Ingest multiple libraries
-openground extract-and-ingest -s https://docs.stripe.com/sitemap.xml -l stripe -y
-openground extract-and-ingest -s https://docs.databricks.com/sitemap.xml -l databricks -y
+openground add -s https://docs.stripe.com/sitemap.xml -l stripe -y
+openground add -s https://docs.databricks.com/sitemap.xml -l databricks -y
 
 # AI can search both or filter to one
 ```
@@ -340,12 +340,12 @@ Use descriptive library names:
 
 ```bash
 # Good
-openground extract-and-ingest -s URL -l stripe-api-docs -y
-openground extract-and-ingest -s URL -l react-v18-docs -y
+openground add -s URL -l stripe-api-docs -y
+openground add -s URL -l react-v18-docs -y
 
 # Less clear
-openground extract-and-ingest -s URL -l docs1 -y
-openground extract-and-ingest -s URL -l docs2 -y
+openground add -s URL -l docs1 -y
+openground add -s URL -l docs2 -y
 ```
 
 ### Keep Documentation Updated
@@ -356,7 +356,7 @@ Set up a cron job or GitHub Action to refresh documentation:
 #!/bin/bash
 # update-docs.sh
 openground rm my-docs -y
-openground extract-and-ingest -s URL -l my-docs -y
+openground add -s URL -l my-docs -y
 ```
 
 ### Use Filters During Extraction
@@ -364,7 +364,7 @@ openground extract-and-ingest -s URL -l my-docs -y
 Only ingest relevant documentation:
 
 ```bash
-openground extract-and-ingest \
+openground add \
   -s https://docs.example.com/sitemap.xml \
   -l example \
   -f docs -f api -f guide \
