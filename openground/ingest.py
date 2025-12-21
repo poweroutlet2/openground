@@ -24,8 +24,18 @@ def get_device() -> str:
     return "cpu"
 
 
-def load_model(device: str, model_name: str = EMBEDDING_MODEL) -> SentenceTransformer:
-    model = SentenceTransformer(model_name, device=device)
+def load_model(
+    device: str, model_name: str = EMBEDDING_MODEL, show_spinner: bool = True
+) -> SentenceTransformer:
+    """Load the embedding model, optionally showing a spinner."""
+    if show_spinner:
+        from rich.console import Console
+
+        console = Console()
+        with console.status(f"[bold green]Loading embedding model ({model_name})..."):
+            model = SentenceTransformer(model_name, device=device)
+    else:
+        model = SentenceTransformer(model_name, device=device)
     return model
 
 
@@ -88,13 +98,13 @@ def generate_embeddings(
         for i in range(0, len(texts_list), batch_size):
             batch = texts_list[i : i + batch_size]
             batch_embeddings = model.encode(
-                batch,
+                sentences=batch,
                 batch_size=len(batch),
                 normalize_embeddings=True,
                 convert_to_numpy=True,
                 show_progress_bar=False,  # We use our own progress bar
             )
-            all_embeddings.extend(batch_embeddings.tolist())
+            all_embeddings.extend(list(batch_embeddings))
             pbar.update(len(batch))
 
     return all_embeddings

@@ -71,8 +71,12 @@ def add(
     ),
 ):
     """Extract pages from a sitemap and ingest them into the local db in one step."""
-    from openground.extract import extract_pages as extract_main
-    from openground.ingest import ingest_to_lancedb, load_parsed_pages
+    from rich.console import Console
+
+    console = Console()
+    with console.status("[bold green]"):
+        from openground.extract import extract_pages as extract_main
+        from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
     # Get config
     config = get_effective_config()
@@ -211,7 +215,11 @@ def ingest(
     ),
 ):
     """Chunk documents, generate embeddings, and ingest into the local db."""
-    from openground.ingest import ingest_to_lancedb, load_parsed_pages
+    from rich.console import Console
+
+    console = Console()
+    with console.status("[bold green]"):
+        from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
     # Get config
     config = get_effective_config()
