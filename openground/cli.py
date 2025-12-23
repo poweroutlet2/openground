@@ -1,6 +1,7 @@
 import asyncio
 import json
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -63,7 +64,7 @@ def add(
         [],
         "--filter-keyword",
         "-f",
-        help="Keyword filter applied to sitemap URLs. Can be specified multiple times (e.g., -f docs -f blog).",
+        help="Keyword filter applied to sitemap URLs. If none are provided, all URLs are extracted. Can be specified multiple times (e.g., -f docs -f /blog).",
     ),
     yes: bool = typer.Option(
         False,
@@ -146,10 +147,10 @@ def extract(
         help="Name of the library/framework for this documentation.",
     ),
     filter_keywords: list[str] = typer.Option(
+        [],
         "--filter-keyword",
         "-f",
-        help="Keyword filter applied to sitemap URLs. Can be specified multiple times (e.g., -f docs -f blog).",
-        show_default=True,
+        help="Keyword filter applied to sitemap URLs. If none are provided, all URLs are extracted. Can be specified multiple times (e.g., -f docs -f /blog).",
     ),
     concurrency_limit: int | None = typer.Option(
         None,
@@ -453,12 +454,20 @@ def _get_cursor_config_path() -> Path:
         return Path.home() / ".cursor" / "mcp.json"
     else:  # Linux and others
         # Linux: ~/.config/cursor/mcp.json
-        return Path.home() / ".config" / "cursor" / "mcp.json"
+        return Path.home() / ".cursor" / "mcp.json"
 
 
 def _get_opencode_config_path() -> Path:
     """Determine the OpenCode config file path."""
     return Path.home() / ".config" / "opencode" / "opencode.json"
+
+
+def _find_openground_mcp_command() -> str:
+    """Find the openground-mcp command, returning full path if found, otherwise the command name."""
+    command_path = shutil.which("openground-mcp")
+    if command_path:
+        return str(Path(command_path).resolve())
+    return "openground-mcp"
 
 
 def _install_to_cursor() -> None:
@@ -507,9 +516,9 @@ def _install_to_cursor() -> None:
             print("Proceeding without backup...")
 
     # Build new config - uses the openground-mcp entry point
+    mcp_command = _find_openground_mcp_command()
     new_server_config = {
-        "command": "openground-mcp",
-        "args": [],
+        "command": mcp_command,
     }
 
     # Merge into existing config
@@ -605,9 +614,10 @@ def _install_to_opencode() -> None:
             print("Proceeding without backup...")
 
     # Build new config - uses the openground-mcp entry point
+    mcp_command = _find_openground_mcp_command()
     new_server_config = {
         "type": "local",
-        "command": ["openground-mcp"],
+        "command": [mcp_command],
         "enabled": True,
     }
 
@@ -701,11 +711,11 @@ def install_cmd(
                 }
             }
         else:
+            mcp_command = _find_openground_mcp_command()
             config = {
                 "mcpServers": {
                     "openground": {
-                        "command": "openground-mcp",
-                        "args": [],
+                        "command": mcp_command,
                     }
                 }
             }

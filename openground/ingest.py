@@ -1,3 +1,5 @@
+from lancedb import Table
+from lancedb.db import DBConnection
 import json
 from pathlib import Path
 from collections.abc import Iterable
@@ -52,7 +54,7 @@ def load_parsed_pages(directory: Path) -> list[ParsedPage]:
             ParsedPage(
                 url=raw.get("url", ""),
                 library_name=raw.get("library_name", ""),
-                version=raw.get("version"),
+                version=raw.get("version", "latest"),
                 title=raw.get("title"),
                 description=raw.get("description"),
                 last_modified=raw.get("last_modified"),
@@ -116,7 +118,9 @@ def generate_embeddings(
     return all_embeddings
 
 
-def ensure_table(db, table_name: str, embedding_dimensions: int = EMBEDDING_DIMENSIONS):
+def ensure_table(
+    db: DBConnection, table_name: str, embedding_dimensions: int = EMBEDDING_DIMENSIONS
+) -> Table:
     if table_name in db.table_names():
         return db.open_table(table_name)
     schema = pa.schema(
@@ -154,9 +158,6 @@ def ingest_to_lancedb(
     print(f"Using embedding model: {embedding_model}")
     model = load_model(device, model_name=embedding_model)
 
-    db = lancedb.connect(str(db_path))
-    table = ensure_table(db, table_name, embedding_dimensions=embedding_dimensions)
-
     # Chunk documents with progress
     all_records = []
     for page in tqdm(pages, desc="Chunking documents", unit="page"):
@@ -175,6 +176,9 @@ def ingest_to_lancedb(
     # Add embeddings to records
     for rec, emb in zip(all_records, embeddings):
         rec["vector"] = emb
+
+    db = lancedb.connect(str(db_path))
+    table = ensure_table(db, table_name, embedding_dimensions=embedding_dimensions)
 
     # Save to LanceDB with progress indication
     print(f"Inserting {len(all_records)} chunks into LanceDB...")
