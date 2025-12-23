@@ -16,6 +16,7 @@ from openground.config import (
     EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL,
 )
+from openground.console import success
 
 
 def get_device() -> str:
@@ -188,8 +189,8 @@ def ingest_to_lancedb(
     print("Creating full-text search index...")
     try:
         table.create_fts_index("content", replace=True)
-        print("✅ Full-text search index created")
+        success("Full-text search index created")
     except Exception as exc:  # best-effort; index may already exist
         print(f"FTS index creation skipped: {exc}")
 
-    print(f"🎉 Ingested {len(all_records)} chunks into table '{table_name}'.")
+    success(f"Ingested {len(all_records)} chunks into table '{table_name}'.")

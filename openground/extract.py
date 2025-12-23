@@ -17,6 +17,7 @@ from openground.config import (
     SITEMAP_URL,
     get_library_raw_data_dir,
 )
+from openground.console import success
 
 import trafilatura
 
@@ -226,4 +227,4 @@ async def extract_pages(
 
         await save_results(results, output_dir)
         valid_count = sum(1 for r in results if r is not None)
-        print(f"🎉 Saved {valid_count} pages!")
+        success(f"Saved {valid_count} pages!")

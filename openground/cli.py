@@ -22,6 +22,7 @@ from openground.config import (
     get_default_config,
     clear_config_cache,
 )
+from openground.console import success, error, hint, warning
 
 app = typer.Typer(
     help="Openground is a CLI for storing and querying documentation in a local vector database."
@@ -49,7 +50,7 @@ def ensure_config_exists(ctx: typer.Context):
 
     # Notify user if we just created it
     if not file_existed and config_path.exists():
-        print(f"✓ Config file created at {config_path}\n")
+        success(f"Config file created at {config_path}\n")
 
 
 @app.command("add")
@@ -106,17 +107,17 @@ def add(
 
     json_files = list(data_dir.glob("*.json"))
     page_count = len(json_files)
-    print(f"\n✅ Extraction complete: {page_count} pages extracted to {data_dir}")
+    success(f"\nExtraction complete: {page_count} pages extracted to {data_dir}")
 
     if not yes:
         print("\nPress Enter to continue with ingestion, or Ctrl+C to exit...")
         try:
             input()
         except KeyboardInterrupt:
-            print("\n❌ Cancelled by user.")
+            error("\nCancelled by user.")
             raise typer.Abort()
 
-    print("\n🚀 Starting ingestion...")
+    print("\nStarting ingestion...")
     pages = load_parsed_pages(data_dir)
 
     # Get db_path and table_name from config
@@ -377,7 +378,7 @@ def remove_library_cmd(
         typer.confirm("\nAre you sure you want to delete this library?", abort=True)
 
     deleted = delete_library(library_name, db_path, table_name)
-    print(f"\n✅ Deleted {deleted} chunks for library '{library_name}'.")
+    success(f"\nDeleted {deleted} chunks for library '{library_name}'.")
 
     # Check if raw library directory exists and offer to delete
     if not yes:
@@ -387,7 +388,7 @@ def remove_library_cmd(
                 import shutil
 
                 shutil.rmtree(raw_library_dir)
-                print(f"✅ Deleted raw library files at {raw_library_dir}.")
+                success(f"Deleted raw library files at {raw_library_dir}.")
 
 
 def _install_to_claude_code() -> None:
@@ -415,11 +416,11 @@ def _install_to_claude_code() -> None:
         )
 
         if result.returncode == 0:
-            print("✅ Successfully installed openground to Claude Code!")
+            success("Successfully installed openground to Claude Code!")
             if result.stdout:
                 print(result.stdout)
         else:
-            print("❌ Failed to install to Claude Code.")
+            error("Failed to install to Claude Code.")
             if result.stderr:
                 print(f"Error: {result.stderr}")
             if result.stdout:
@@ -427,7 +428,7 @@ def _install_to_claude_code() -> None:
             sys.exit(1)
 
     except FileNotFoundError:
-        print("❌ Error: 'claude' CLI not found in PATH.")
+        error("Error: 'claude' CLI not found in PATH.")
         print("\nPlease install Claude Code CLI first:")
         print("  https://code.claude.com/docs/en/cli")
         print("\nAlternatively, you can manually install by running:")
@@ -435,7 +436,7 @@ def _install_to_claude_code() -> None:
         print("  (without --claude-code flag)")
         sys.exit(1)
     except Exception as e:
-        print(f"❌ Error installing to Claude Code: {e}")
+        error(f"Error installing to Claude Code: {e}")
         print("\nYou can manually install by running:")
         print("  openground install-mcp")
         print("  (without --claude-code flag)")
@@ -489,17 +490,17 @@ def _install_to_cursor() -> None:
                     if "mcpServers" not in existing_config:
                         existing_config["mcpServers"] = {}
         except json.JSONDecodeError as e:
-            print(f"❌ Error: {config_path} contains invalid JSON.")
+            error(f"Error: {config_path} contains invalid JSON.")
             print(f"   Parse error: {e}")
             print("\nPlease fix the file manually or delete it to start fresh.")
             sys.exit(1)
         except Exception as e:
-            print(f"❌ Error reading {config_path}: {e}")
+            error(f"Error reading {config_path}: {e}")
             sys.exit(1)
 
     # Check if openground already exists
     if "openground" in existing_config.get("mcpServers", {}):
-        print("⚠️  Warning: 'openground' is already configured in Cursor.")
+        warning("Warning: 'openground' is already configured in Cursor.")
         print("Current config will be updated.")
 
     # Create backup before modifying
@@ -510,9 +511,9 @@ def _install_to_cursor() -> None:
             import shutil
 
             shutil.copy2(config_path, backup_path)
-            print(f"📦 Created backup: {backup_path}")
+            print(f"Created backup: {backup_path}")
         except Exception as e:
-            print(f"⚠️  Warning: Could not create backup: {e}")
+            warning(f"Warning: Could not create backup: {e}")
             print("Proceeding without backup...")
 
     # Build new config - uses the openground-mcp entry point
@@ -545,24 +546,24 @@ def _install_to_cursor() -> None:
         except json.JSONDecodeError as e:
             if tmp_path and tmp_path.exists():
                 tmp_path.unlink()  # Clean up temp file
-            print(f"❌ Error: Generated configuration is invalid JSON: {e}")
+            error(f"Error: Generated configuration is invalid JSON: {e}")
             sys.exit(1)
 
         # Atomic rename
         if tmp_path:
             tmp_path.replace(config_path)
-        print("✅ Successfully installed openground to Cursor!")
+        success("Successfully installed openground to Cursor!")
         print(f"   Configuration written to: {config_path}")
-        print("\n💡 Restart Cursor to apply changes.")
+        hint("\nRestart Cursor to apply changes.")
 
     except PermissionError:
-        print(f"❌ Error: Permission denied writing to {config_path}")
+        error(f"Error: Permission denied writing to {config_path}")
         print("   Please check file permissions or run with appropriate privileges.")
         if tmp_path and tmp_path.exists():
             tmp_path.unlink()  # Clean up temp file
         sys.exit(1)
     except Exception as e:
-        print(f"❌ Error writing configuration: {e}")
+        error(f"Error writing configuration: {e}")
         if tmp_path and tmp_path.exists():
             tmp_path.unlink()  # Clean up temp file
         sys.exit(1)
@@ -587,17 +588,17 @@ def _install_to_opencode() -> None:
                     if "mcp" not in existing_config:
                         existing_config["mcp"] = {}
         except json.JSONDecodeError as e:
-            print(f"❌ Error: {config_path} contains invalid JSON.")
+            error(f"Error: {config_path} contains invalid JSON.")
             print(f"   Parse error: {e}")
             print("\nPlease fix the file manually or delete it to start fresh.")
             sys.exit(1)
         except Exception as e:
-            print(f"❌ Error reading {config_path}: {e}")
+            error(f"Error reading {config_path}: {e}")
             sys.exit(1)
 
     # Check if openground already exists
     if "openground" in existing_config.get("mcp", {}):
-        print("⚠️  Warning: 'openground' is already configured in OpenCode.")
+        warning("Warning: 'openground' is already configured in OpenCode.")
         print("Current config will be updated.")
 
     # Create backup before modifying
@@ -608,9 +609,9 @@ def _install_to_opencode() -> None:
             import shutil
 
             shutil.copy2(config_path, backup_path)
-            print(f"📦 Created backup: {backup_path}")
+            print(f"Created backup: {backup_path}")
         except Exception as e:
-            print(f"⚠️  Warning: Could not create backup: {e}")
+            warning(f"Warning: Could not create backup: {e}")
             print("Proceeding without backup...")
 
     # Build new config - uses the openground-mcp entry point
@@ -645,24 +646,24 @@ def _install_to_opencode() -> None:
         except json.JSONDecodeError as e:
             if tmp_path and tmp_path.exists():
                 tmp_path.unlink()  # Clean up temp file
-            print(f"❌ Error: Generated configuration is invalid JSON: {e}")
+            error(f"Error: Generated configuration is invalid JSON: {e}")
             sys.exit(1)
 
         # Atomic rename
         if tmp_path:
             tmp_path.replace(config_path)
-        print("✅ Successfully installed openground to OpenCode!")
+        success("Successfully installed openground to OpenCode!")
         print(f"   Configuration written to: {config_path}")
-        print("\n💡 Restart OpenCode to apply changes.")
+        hint("\nRestart OpenCode to apply changes.")
 
     except PermissionError:
-        print(f"❌ Error: Permission denied writing to {config_path}")
+        error(f"Error: Permission denied writing to {config_path}")
         print("   Please check file permissions or run with appropriate privileges.")
         if tmp_path and tmp_path.exists():
             tmp_path.unlink()  # Clean up temp file
         sys.exit(1)
     except Exception as e:
-        print(f"❌ Error writing configuration: {e}")
+        error(f"Error writing configuration: {e}")
         if tmp_path and tmp_path.exists():
             tmp_path.unlink()  # Clean up temp file
         sys.exit(1)
@@ -805,7 +806,7 @@ def config_set(
 
     # Navigate to the right place in the config (supports arbitrary depth).
     if not parts or any(not p for p in parts):
-        print(f"❌ Error: Invalid key format '{key}'.")
+        error(f"Error: Invalid key format '{key}'.")
         raise typer.Exit(1)
 
     cur = config
@@ -815,8 +816,8 @@ def config_set(
             cur[part] = {}
             existing = cur[part]
         if not isinstance(existing, dict):
-            print(
-                f"❌ Error: Cannot set '{key}' because '{part}' is not an object in config."
+            error(
+                f"Error: Cannot set '{key}' because '{part}' is not an object in config."
             )
             raise typer.Exit(1)
         cur = existing
@@ -826,7 +827,7 @@ def config_set(
     save_config(config)
     clear_config_cache()
 
-    print(f"✅ Set {key} = {parsed_value}")
+    success(f"Set {key} = {parsed_value}")
     print(f"   Config saved to {get_config_path()}")
 
 
@@ -844,7 +845,7 @@ def config_get(
 
     try:
         if not parts or any(not p for p in parts):
-            print(f"❌ Error: Invalid key format '{key}'.")
+            error(f"Error: Invalid key format '{key}'.")
             raise typer.Exit(1)
 
         cur: object = config
@@ -855,7 +856,7 @@ def config_get(
 
         print(cur)
     except KeyError:
-        print(f"❌ Error: Key '{key}' not found in config.")
+        error(f"Error: Key '{key}' not found in config.")
         raise typer.Exit(1)
 
 
@@ -881,7 +882,7 @@ def config_reset(
 
     config_path.unlink()
     clear_config_cache()
-    print(f"✅ Config file deleted: {config_path}")
+    success(f"Config file deleted: {config_path}")
     print("   All settings will use defaults.")
 
 
