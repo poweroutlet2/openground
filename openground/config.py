@@ -28,7 +28,6 @@ DEFAULT_LIBRARY_NAME = "openground_docs"
 # Extraction defaults
 SITEMAP_URL = "https://docs.openground.ai/sitemap.xml"
 CONCURRENCY_LIMIT = 50
-FILTER_KEYWORDS = ["docs", "documentation", "blog"]
 
 
 DEFAULT_RAW_DATA_DIR_BASE = get_data_home() / "raw_data"

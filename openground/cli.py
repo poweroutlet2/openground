@@ -12,7 +12,6 @@ import typer
 
 from openground.config import (
     DEFAULT_LIBRARY_NAME,
-    FILTER_KEYWORDS,
     SITEMAP_URL,
     get_library_raw_data_dir,
     get_config_path,
@@ -147,7 +146,6 @@ def extract(
         help="Name of the library/framework for this documentation.",
     ),
     filter_keywords: list[str] = typer.Option(
-        FILTER_KEYWORDS,
         "--filter-keyword",
         "-f",
         help="Keyword filter applied to sitemap URLs. Can be specified multiple times (e.g., -f docs -f blog).",

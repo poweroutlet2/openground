@@ -14,7 +14,6 @@ from tqdm.asyncio import tqdm as async_tqdm
 from openground.config import (
     CONCURRENCY_LIMIT,
     DEFAULT_LIBRARY_NAME,
-    FILTER_KEYWORDS,
     SITEMAP_URL,
     get_library_raw_data_dir,
 )
@@ -188,7 +187,7 @@ async def extract_pages(
     concurrency_limit: int = CONCURRENCY_LIMIT,
     library_name: str = DEFAULT_LIBRARY_NAME,
     output_dir: Path | None = None,
-    filter_keywords: list[str] = FILTER_KEYWORDS,
+    filter_keywords: list[str] = [],
 ):
     if output_dir is None:
         output_dir = get_library_raw_data_dir(library_name)
