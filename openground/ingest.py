@@ -52,6 +52,7 @@ def load_parsed_pages(directory: Path) -> list[ParsedPage]:
             ParsedPage(
                 url=raw.get("url", ""),
                 library_name=raw.get("library_name", ""),
+                version=raw.get("version"),
                 title=raw.get("title"),
                 description=raw.get("description"),
                 last_modified=raw.get("last_modified"),
@@ -62,7 +63,11 @@ def load_parsed_pages(directory: Path) -> list[ParsedPage]:
     return pages
 
 
-def chunk_document(page: ParsedPage, chunk_size: int, chunk_overlap: int) -> list[dict]:
+def chunk_document(
+    page: ParsedPage,
+    chunk_size: int,
+    chunk_overlap: int,
+) -> list[dict]:
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size, chunk_overlap=chunk_overlap
     )
@@ -73,6 +78,7 @@ def chunk_document(page: ParsedPage, chunk_size: int, chunk_overlap: int) -> lis
             {
                 "url": page["url"],
                 "library_name": page["library_name"],
+                "version": page["version"],
                 "title": page["title"] or "",
                 "description": page["description"] or "",
                 "last_modified": page["last_modified"] or "",
@@ -117,6 +123,7 @@ def ensure_table(db, table_name: str, embedding_dimensions: int = EMBEDDING_DIME
         [
             pa.field("url", pa.string()),
             pa.field("library_name", pa.string()),
+            pa.field("version", pa.string()),
             pa.field("title", pa.string()),
             pa.field("description", pa.string()),
             pa.field("last_modified", pa.string()),

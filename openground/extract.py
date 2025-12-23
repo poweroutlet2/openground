@@ -14,9 +14,9 @@ from tqdm.asyncio import tqdm as async_tqdm
 from openground.config import (
     CONCURRENCY_LIMIT,
     DEFAULT_LIBRARY_NAME,
-    DEFAULT_RAW_DATA_DIR,
     FILTER_KEYWORDS,
     SITEMAP_URL,
+    get_library_raw_data_dir,
 )
 
 import trafilatura
@@ -25,6 +25,7 @@ import trafilatura
 class ParsedPage(TypedDict):
     url: str
     library_name: str
+    version: str
     title: str | None
     description: str | None
     last_modified: str | None
@@ -154,6 +155,7 @@ def parse_html(url: str, html: str, last_modified: str, library_name: str):
     return ParsedPage(
         url=url,
         library_name=library_name,
+        version="latest",  # TODO: Implement version detection
         title=metadata.title if metadata else "Unknown",
         description=metadata.description if metadata else "",
         last_modified=last_modified,
@@ -185,9 +187,11 @@ async def extract_pages(
     sitemap_url: str = SITEMAP_URL,
     concurrency_limit: int = CONCURRENCY_LIMIT,
     library_name: str = DEFAULT_LIBRARY_NAME,
-    output_dir: Path = DEFAULT_RAW_DATA_DIR,
+    output_dir: Path | None = None,
     filter_keywords: list[str] = FILTER_KEYWORDS,
 ):
+    if output_dir is None:
+        output_dir = get_library_raw_data_dir(library_name)
     connector = aiohttp.TCPConnector()
 
     async with aiohttp.ClientSession(connector=connector) as session:

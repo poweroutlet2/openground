@@ -34,14 +34,12 @@ FILTER_KEYWORDS = ["docs", "documentation", "blog"]
 DEFAULT_RAW_DATA_DIR_BASE = get_data_home() / "raw_data"
 
 
-def get_raw_data_dir(library_name: str) -> Path:
+def get_library_raw_data_dir(library_name: str) -> Path:
     """Construct the path to the raw data directory for a given library name."""
     config = get_effective_config()
     raw_data_dir_base = Path(config.get("raw_data_dir", str(DEFAULT_RAW_DATA_DIR_BASE)))
     return raw_data_dir_base / library_name.lower()
 
-
-DEFAULT_RAW_DATA_DIR = DEFAULT_RAW_DATA_DIR_BASE / DEFAULT_LIBRARY_NAME.lower()
 
 # Ingestion / query defaults
 DEFAULT_DB_PATH = get_data_home() / "lancedb"
@@ -166,10 +164,22 @@ def _merge_with_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
         merged["raw_data_dir"] = user_config["raw_data_dir"]
 
     if "extraction" in user_config:
+        if not isinstance(user_config["extraction"], dict):
+            raise ValueError(
+                "Config key 'extraction' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
+            )
         merged["extraction"].update(user_config["extraction"])
     if "ingestion" in user_config:
+        if not isinstance(user_config["ingestion"], dict):
+            raise ValueError(
+                "Config key 'ingestion' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
+            )
         merged["ingestion"].update(user_config["ingestion"])
     if "query" in user_config:
+        if not isinstance(user_config["query"], dict):
+            raise ValueError(
+                "Config key 'query' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
+            )
         merged["query"].update(user_config["query"])
 
     return merged

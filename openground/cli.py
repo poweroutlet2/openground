@@ -12,11 +12,9 @@ import typer
 
 from openground.config import (
     DEFAULT_LIBRARY_NAME,
-    DEFAULT_RAW_DATA_DIR,
     FILTER_KEYWORDS,
     SITEMAP_URL,
-    get_data_home,
-    get_raw_data_dir,
+    get_library_raw_data_dir,
     get_config_path,
     load_config,
     save_config,
@@ -33,6 +31,11 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 def ensure_config_exists(ctx: typer.Context):
     """Ensure config file exists before running any command."""
+    # Avoid side effects (like writing config files) when Typer is doing
+    # resilient parsing (e.g. for --help, completion, etc.).
+    if getattr(ctx, "resilient_parsing", False):
+        return
+
     config_path = get_config_path()
     file_existed = config_path.exists()
 
@@ -82,7 +85,7 @@ def add(
     config = get_effective_config()
 
     # Construct output directory from library
-    output_dir = get_raw_data_dir(library)
+    output_dir = get_library_raw_data_dir(library)
 
     async def _run_extract():
         await extract_main(
@@ -95,7 +98,7 @@ def add(
 
     asyncio.run(_run_extract())
 
-    data_dir = get_raw_data_dir(library)
+    data_dir = get_library_raw_data_dir(library)
     if not data_dir.exists():
         raise typer.BadParameter(
             f"Extraction completed but data directory not found at {data_dir}."
@@ -170,7 +173,7 @@ def extract(
         concurrency_limit = config["extraction"]["concurrency_limit"]
 
     # Output dir is always computed from library
-    output_dir = get_raw_data_dir(library)
+    output_dir = get_library_raw_data_dir(library)
 
     async def _run():
         await extract_main(
@@ -238,15 +241,17 @@ def ingest(
 
     # If library is specified, construct the path and validate it exists
     if library:
-        data_dir = get_raw_data_dir(library)
+        data_dir = get_library_raw_data_dir(library)
         if not data_dir.exists():
             raise typer.BadParameter(
                 f"Library '{library}' not found at {data_dir}. "
                 f"Use 'list-raw-libraries' to see available libraries."
             )
     else:
-        # If no library specified, use default
-        data_dir = DEFAULT_RAW_DATA_DIR
+        # If no library specified, default to the default library name, but still
+        # respect config["raw_data_dir"].
+        library = DEFAULT_LIBRARY_NAME
+        data_dir = get_library_raw_data_dir(library)
 
     pages = load_parsed_pages(data_dir)
     ingest_to_lancedb(
@@ -323,7 +328,8 @@ def list_libraries_cmd():
 @app.command("list-raw-libraries")
 def list_raw_libraries_cmd():
     """List available libraries in the raw_data directory."""
-    raw_data_dir = get_data_home() / "raw_data"
+    config = get_effective_config()
+    raw_data_dir = Path(config["raw_data_dir"]).expanduser()
     if not raw_data_dir.exists():
         print("No libraries found in raw_data.")
         return
@@ -376,7 +382,7 @@ def remove_library_cmd(
 
     # Check if raw library directory exists and offer to delete
     if not yes:
-        raw_library_dir = get_raw_data_dir(library_name)
+        raw_library_dir = get_library_raw_data_dir(library_name)
         if raw_library_dir.exists():
             if typer.confirm(f"\nAlso delete raw files at {raw_library_dir}?"):
                 import shutil
@@ -750,11 +756,12 @@ def config_show(
 ):
     """Display current configuration."""
     config_path = get_config_path()
-    print(f"Config file: {config_path}\n")
+    print(f"Path to config file: {config_path}\n")
 
     if defaults:
         # Show hardcoded defaults from source of truth
         config = get_default_config()
+        print("Default values:")
         print(json.dumps(config, indent=2))
     else:
         # Show effective config
@@ -776,32 +783,36 @@ def config_set(
     # Parse the key (support dot notation)
     parts = key.split(".")
 
-    # Convert value to appropriate type
-    parsed_value: str | int | float
+    # Convert value to an appropriate type.
+    #
+    # Supports JSON literals for booleans, null, arrays, and objects:
+    #   openground config set query.top_k 7
+    #   openground config set extraction.enabled true
+    #   openground config set query.filters '["docs","api"]'
+    # For plain strings, keep as-is (no quotes needed).
     try:
-        # Try to parse as int
-        parsed_value = int(value)
-    except ValueError:
-        try:
-            # Try to parse as float
-            parsed_value = float(value)
-        except ValueError:
-            # Keep as string
-            parsed_value = value
+        parsed_value = json.loads(value)
+    except json.JSONDecodeError:
+        parsed_value = value
 
-    # Navigate to the right place in the config
-    if len(parts) == 1:
-        # Top-level key
-        config[parts[0]] = parsed_value
-    elif len(parts) == 2:
-        # Nested key (e.g., "ingestion.chunk_size")
-        section, subkey = parts
-        if section not in config:
-            config[section] = {}
-        config[section][subkey] = parsed_value
-    else:
-        print(f"❌ Error: Invalid key format '{key}'. Use 'key' or 'section.key'.")
+    # Navigate to the right place in the config (supports arbitrary depth).
+    if not parts or any(not p for p in parts):
+        print(f"❌ Error: Invalid key format '{key}'.")
         raise typer.Exit(1)
+
+    cur = config
+    for part in parts[:-1]:
+        existing = cur.get(part)
+        if existing is None:
+            cur[part] = {}
+            existing = cur[part]
+        if not isinstance(existing, dict):
+            print(
+                f"❌ Error: Cannot set '{key}' because '{part}' is not an object in config."
+            )
+            raise typer.Exit(1)
+        cur = existing
+    cur[parts[-1]] = parsed_value
 
     # Save config
     save_config(config)
@@ -824,16 +835,17 @@ def config_get(
     parts = key.split(".")
 
     try:
-        if len(parts) == 1:
-            value = config[parts[0]]
-        elif len(parts) == 2:
-            section, subkey = parts
-            value = config[section][subkey]
-        else:
-            print(f"❌ Error: Invalid key format '{key}'. Use 'key' or 'section.key'.")
+        if not parts or any(not p for p in parts):
+            print(f"❌ Error: Invalid key format '{key}'.")
             raise typer.Exit(1)
 
-        print(value)
+        cur: object = config
+        for part in parts:
+            if not isinstance(cur, dict) or part not in cur:
+                raise KeyError(part)
+            cur = cur[part]
+
+        print(cur)
     except KeyError:
         print(f"❌ Error: Key '{key}' not found in config.")
         raise typer.Exit(1)
