@@ -282,10 +282,8 @@ def extract_git(
 
 @app.command()
 def ingest(
-    library: Optional[str] = typer.Option(
-        None,
-        "--library",
-        "-l",
+    library: Optional[str] = typer.Argument(
+        ...,
         help="Library name to ingest from raw_data/{library}.",
     ),
 ):
@@ -296,19 +294,12 @@ def ingest(
     with console.status("[bold green]"):
         from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
-    # If library is specified, construct the path and validate it exists
-    if library:
-        data_dir = get_library_raw_data_dir(library)
-        if not data_dir.exists():
-            raise typer.BadParameter(
-                f"Library '{library}' not found at {data_dir}. "
-                f"Use 'list-raw-libraries' to see available libraries."
-            )
-    else:
-        # If no library specified, default to the default library name, but still
-        # respect config["raw_data_dir"].
-        library = DEFAULT_LIBRARY_NAME
-        data_dir = get_library_raw_data_dir(library)
+    data_dir = get_library_raw_data_dir(library)
+    if not data_dir.exists():
+        raise typer.BadParameter(
+            f"Library '{library}' not found at {data_dir}. "
+            f"Use 'list-raw-libraries' to see available libraries."
+        )
 
     pages = load_parsed_pages(data_dir)
     ingest_to_lancedb(pages=pages)
@@ -804,6 +795,10 @@ def install_cmd(
 config_app = typer.Typer(help="Manage openground configuration.")
 app.add_typer(config_app, name="config")
 
+# Nuke Sub App
+nuke_app = typer.Typer(help="Delete all data from raw_data and/or LanceDB.")
+app.add_typer(nuke_app, name="nuke")
+
 
 @config_app.command("show")
 def config_show(
@@ -932,6 +927,158 @@ def config_reset(
     clear_config_cache()
     success(f"Config file deleted: {config_path}")
     print("   All settings will use defaults.")
+
+
+@nuke_app.command("all")
+def nuke_all(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+):
+    """Delete all files in both raw_data and LanceDB directories."""
+    import shutil
+    from openground.query import list_libraries
+
+    config = get_effective_config()
+    raw_data_dir = Path(config["raw_data_dir"]).expanduser()
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+
+    # Count libraries in raw_data
+    raw_libraries = []
+    if raw_data_dir.exists():
+        raw_libraries = [d.name for d in raw_data_dir.iterdir() if d.is_dir()]
+    raw_count = len(raw_libraries)
+
+    # Count libraries in embeddings
+    embedding_libraries = []
+    try:
+        embedding_libraries = list_libraries(db_path=db_path, table_name=table_name)
+    except Exception:
+        # Table might not exist, that's okay
+        pass
+    embedding_count = len(embedding_libraries)
+
+    # Show summary
+    warning("\nThis will permanently delete ALL data:")
+    print(f"  • Raw data: {raw_count} libraries in {raw_data_dir}")
+    print(f"  • Embeddings: {embedding_count} libraries in {db_path}")
+    print()
+
+    if raw_count == 0 and embedding_count == 0:
+        print("No data found. Nothing to delete.")
+        return
+
+    hint(
+        "Tip: Run 'openground list-raw-libraries' and 'openground list-libraries' "
+        "to see what will be deleted."
+    )
+    print()
+
+    if not yes:
+        typer.confirm(
+            "Are you sure you want to delete ALL data? This cannot be undone!",
+            abort=True,
+        )
+
+    # Delete raw_data
+    if raw_data_dir.exists():
+        shutil.rmtree(raw_data_dir)
+        success(f"Deleted raw data directory: {raw_data_dir}")
+
+    # Delete db_path
+    if db_path.exists():
+        shutil.rmtree(db_path)
+        success(f"Deleted LanceDB directory: {db_path}")
+
+    if raw_count > 0 or embedding_count > 0:
+        success(
+            f"\nDeleted all data ({raw_count} raw libraries, {embedding_count} embedded libraries)."
+        )
+
+
+@nuke_app.command("raw_data")
+def nuke_raw_data(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+):
+    """Delete all files in the raw_data directory."""
+    import shutil
+
+    config = get_effective_config()
+    raw_data_dir = Path(config["raw_data_dir"]).expanduser()
+
+    # Count libraries in raw_data
+    raw_libraries = []
+    if raw_data_dir.exists():
+        raw_libraries = [d.name for d in raw_data_dir.iterdir() if d.is_dir()]
+    raw_count = len(raw_libraries)
+
+    # Show summary
+    warning("\nThis will permanently delete ALL raw data:")
+    print(f"  • {raw_count} libraries in {raw_data_dir}")
+    print()
+
+    if raw_count == 0:
+        print("No raw data found. Nothing to delete.")
+        return
+
+    hint("Tip: Run 'openground list-raw-libraries' to see what will be deleted.")
+    print()
+
+    if not yes:
+        typer.confirm(
+            "Are you sure you want to delete ALL raw data? This cannot be undone!",
+            abort=True,
+        )
+
+    # Delete raw_data
+    if raw_data_dir.exists():
+        shutil.rmtree(raw_data_dir)
+        success(f"Deleted raw data directory: {raw_data_dir}")
+        success(f"\nDeleted {raw_count} raw libraries.")
+
+
+@nuke_app.command("embeddings")
+def nuke_embeddings(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+):
+    """Delete all files in the LanceDB directory."""
+    import shutil
+    from openground.query import list_libraries
+
+    config = get_effective_config()
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+
+    # Count libraries in embeddings
+    embedding_libraries = []
+    try:
+        embedding_libraries = list_libraries(db_path=db_path, table_name=table_name)
+    except Exception:
+        # Do nothing if table doesn't exist
+        pass
+    embedding_count = len(embedding_libraries)
+
+    warning("\nThis will permanently delete ALL embeddings:")
+    print(f"  • {embedding_count} libraries in {db_path}")
+    print()
+
+    if embedding_count == 0:
+        print("No embeddings found. Nothing to delete.")
+        return
+
+    hint("Tip: Run 'openground list-libraries' to see what will be deleted.")
+    print()
+
+    if not yes:
+        typer.confirm(
+            "Are you sure you want to delete ALL embeddings? This cannot be undone!",
+            abort=True,
+        )
+
+    # Delete db_path
+    if db_path.exists():
+        shutil.rmtree(db_path)
+        success(f"Deleted LanceDB directory: {db_path}")
+        success(f"\nDeleted {embedding_count} embedded libraries.")
 
 
 if __name__ == "__main__":

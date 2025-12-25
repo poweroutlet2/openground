@@ -79,6 +79,15 @@ openground config set KEY VALUE
 openground config get KEY
 ```
 
+### [nuke](nuke.md)
+Delete all data from raw_data and/or LanceDB directories.
+
+```bash
+openground nuke all              # Delete everything
+openground nuke raw_data         # Delete only raw data
+openground nuke embeddings       # Delete only embeddings
+```
+
 ## MCP Integration Commands
 
 ### install-mcp
@@ -107,6 +116,7 @@ See [MCP Integration](../mcp-integration.md) for details.
 | `list-raw-libraries` | List raw data libraries | None |
 | `rm` | Remove library | library name, `-y` (skip confirm) |
 | `config` | Manage settings | `show`, `get`, `set`, `reset`, `path` |
+| `nuke` | Delete all data | `all`, `raw_data`, `embeddings`, `-y` (skip confirm) |
 | `install-mcp` | Setup MCP server | `--cursor`, `--claude-code`, `--opencode`, `--wsl` |
 
 ## Common Patterns
@@ -166,3 +176,4 @@ Browse the detailed documentation for each command:
 - [ls](list-libraries.md) - Listing libraries
 - [rm](remove-library.md) - Removing libraries
 - [config](config.md) - Configuration management
+- [nuke](nuke.md) - Deleting all data
