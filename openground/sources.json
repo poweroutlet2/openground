@@ -5,7 +5,7 @@
         "languages": [
             "python"
         ],
-        "directories": [
+        "docs_paths": [
             "docs"
         ]
     },
@@ -64,7 +64,7 @@
             "javascript",
             "typescript"
         ],
-        "directories": [
+        "docs_paths": [
             "docs/start"
         ]
     },
@@ -72,8 +72,30 @@
         "type": "git_repo",
         "repo_url": "https://gitlab.com/inkscape/inkscape",
         "languages": [],
-        "directories": [
+        "docs_paths": [
             "doc"
+        ]
+    },
+    "tailwindcss": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/tailwindlabs/tailwindcss.com.git",
+        "docs_paths": [
+            "src/docs",
+            "src/blog"
+        ]
+    },
+    "shadcn-ui": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/shadcn-ui/ui",
+        "docs_paths": [
+            "apps/v4/content/docs"
+        ]
+    },
+    "tanstack_query": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/TanStack/query",
+        "docs_paths": [
+            "docs"
         ]
     }
 }

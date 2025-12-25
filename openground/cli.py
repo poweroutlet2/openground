@@ -63,11 +63,11 @@ def add(
     source: Optional[str] = typer.Option(
         None, "--source", "-s", help="Root sitemap URL or Git repo URL to crawl."
     ),
-    docs_path: Optional[str] = typer.Option(
-        None,
+    docs_paths: list[str] = typer.Option(
+        [],
         "--docs-path",
         "-d",
-        help="Path to documentation within a git repo (e.g., 'docs/'). Only used for git sources. Defaults to root of repo.",
+        help="Path to documentation within a git repo. Specify multiple times for multiple paths (e.g., -d docs/ -d wiki/). Defaults to 'docs/' if not specified.",
     ),
     filter_keywords: list[str] = typer.Option(
         [],
@@ -97,7 +97,7 @@ def add(
     source_config = get_library_config(library)
     source_type = None
     final_source = source
-    final_docs_path = docs_path
+    final_docs_paths = docs_paths
     final_filter_keywords = filter_keywords
 
     if source_config:
@@ -108,10 +108,9 @@ def add(
             elif source_type == "git_repo":
                 final_source = source_config.get("repo_url")
 
-        if not final_docs_path and source_type == "git_repo":
-            # Map 'directories' from current json to docs_path
-            dirs = source_config.get("directories", [])
-            final_docs_path = dirs[0] if dirs else "/"
+        if not final_docs_paths and source_type == "git_repo":
+            # Map 'docs_paths' from current json to final_docs_paths
+            final_docs_paths = source_config.get("docs_paths", [])
 
         if not final_filter_keywords and source_type == "sitemap":
             final_filter_keywords = source_config.get("filter_keywords", [])
@@ -130,8 +129,8 @@ def add(
             domain in final_source for domain in ["github.com", "gitlab.com"]
         ):
             source_type = "git_repo"
-            if not final_docs_path:
-                final_docs_path = "docs/"
+            if not final_docs_paths:
+                final_docs_paths = ["docs/"]
         elif final_source.endswith(".xml") or "sitemap" in final_source.lower():
             source_type = "sitemap"
         else:
@@ -162,7 +161,7 @@ def add(
 
             await extract_repo(
                 repo_url=final_source,
-                docs_path=final_docs_path or "/",
+                docs_paths=final_docs_paths if final_docs_paths else ["/"],
                 output_dir=output_dir,
                 library_name=library,
             )
@@ -261,11 +260,11 @@ def extract(
 @app.command("extract-git")
 def extract_git(
     repo_url: str = typer.Option(..., "--repo-url", "-r", help="Git repository URL."),
-    docs_path: str = typer.Option(
+    docs_paths: list[str] = typer.Option(
         ...,
         "--docs-path",
         "-d",
-        help="Path to documentation within the repo. Use '/' for the whole repo or 'docs/' for a specific folder.",
+        help="Path to documentation within the repo. Specify multiple times for multiple paths (e.g., -d docs/ -d wiki/). Use '/' for the whole repo.",
     ),
     library: str = typer.Option(
         DEFAULT_LIBRARY_NAME,
@@ -283,7 +282,7 @@ def extract_git(
     async def _run():
         await extract_repo(
             repo_url=repo_url,
-            docs_path=docs_path,
+            docs_paths=docs_paths,
             output_dir=output_dir,
             library_name=library,
         )

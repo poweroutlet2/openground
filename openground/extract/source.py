@@ -7,12 +7,9 @@ class LibrarySource(TypedDict, total=False):
     type: Literal["sitemap", "git_repo"]
     sitemap_url: str
     repo_url: str
-    docs_path: (
-        str  # maps to 'docs_path' for git or 'filter_keywords' for sitemap indirectly
-    )
     filter_keywords: List[str]
     languages: List[str]
-    directories: List[str]  # Used in current json, we'll map this to docs_path
+    docs_paths: List[str]
 
 
 def get_source_file_path() -> Path:
@@ -23,7 +20,7 @@ def get_source_file_path() -> Path:
         return pkg_source_file
 
     # Fallback to project root for development
-    root_source_file = Path(__file__).parent.parent / "openground" / "sources.json"
+    root_source_file = Path(__file__).parent.parent / "sources.json"
     if root_source_file.exists():
         return root_source_file
 

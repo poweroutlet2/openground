@@ -100,7 +100,7 @@ def get_default_branch(repo_url: str) -> str:
 
 async def extract_repo(
     repo_url: str,
-    docs_path: str,
+    docs_paths: list[str],
     output_dir: Path,
     library_name: str,
 ):
@@ -109,7 +109,7 @@ async def extract_repo(
 
     Args:
         repo_url: URL of the git repository.
-        docs_path: Path within the repo to extract (e.g., 'docs/' or '/').
+        docs_paths: Paths within the repo to extract (e.g., ['docs/', 'api/']).
         output_dir: Directory to save the processed JSON files.
         library_name: Name of the library.
     """
@@ -137,18 +137,25 @@ async def extract_repo(
 
         # Sparse checkout configuration
 
-        # Normalize docs_path
-        git_docs_path = docs_path.strip("/")
-        if not git_docs_path or docs_path == "/":
-            git_docs_path = "*"
+        # Normalize docs_paths
+        git_docs_paths = []
+        for path in docs_paths:
+            gp = path.strip("/")
+            if not gp or path == "/":
+                git_docs_paths = ["*"]
+                break
+            git_docs_paths.append(gp)
 
-        print(f"Setting sparse-checkout to: {git_docs_path}")
+        if not git_docs_paths:
+            git_docs_paths = ["*"]
+
+        print(f"Setting sparse-checkout to: {', '.join(git_docs_paths)}")
 
         subprocess.run(
             ["git", "sparse-checkout", "init", "--cone"], cwd=temp_path, check=True
         )
         subprocess.run(
-            ["git", "sparse-checkout", "set", git_docs_path], cwd=temp_path, check=True
+            ["git", "sparse-checkout", "set"] + git_docs_paths, cwd=temp_path, check=True
         )
 
         print("Checking out files...")
@@ -157,16 +164,24 @@ async def extract_repo(
         # Process files
         results: list[ParsedPage | None] = []
 
-        # Resolve the actual directory to search
-        search_dir = temp_path
-        if git_docs_path != "*":
-            search_dir = temp_path / git_docs_path
+        # Collect all documentation files from all requested paths
+        all_doc_files = []
+        if "*" in git_docs_paths:
+            all_doc_files.extend(filter_documentation_files(temp_path))
+        else:
+            for gp in git_docs_paths:
+                search_dir = temp_path / gp
+                if search_dir.exists():
+                    all_doc_files.extend(filter_documentation_files(search_dir))
 
-        if not search_dir.exists():
-            error(f"Documentation path '{docs_path}' not found in repository.")
+        # De-duplicate files (in case paths overlap)
+        doc_files = sorted(list(set(all_doc_files)))
+
+        if not doc_files:
+            error(f"No documentation files found in paths: {', '.join(git_docs_paths)}")
             return
 
-        print(f"Processing files in {search_dir}...")
+        print(f"Processing {len(doc_files)} files...")
 
         # Detect default branch for URL construction
         branch = get_default_branch(repo_url)
@@ -180,8 +195,6 @@ async def extract_repo(
             # GitHub/GitLab: base/tree/branch/path (or /blob/ for files)
             # Use /tree/ as it works reasonably for both dirs and files as a base
             base_web_url = f"{base_web_url}/tree/{branch}"
-
-        doc_files = filter_documentation_files(search_dir)
 
         for file_path in doc_files:
             try:
@@ -214,9 +227,9 @@ async def extract_repo(
                 print(f"Warning: Could not process {file_path}: {e}")
 
         if not results:
-            error("No documentation files found.")
+            error("No documentation files found after processing.")
             return
 
-        print(f"Found {len(results)} text files. Saving...")
+        print(f"Found {len(results)} valid documentation pages. Saving...")
         await save_results(results, output_dir)
         success(f"Successfully extracted {len(results)} files to {output_dir}")
