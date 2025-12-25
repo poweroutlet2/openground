@@ -45,6 +45,7 @@ DEFAULT_DB_PATH = get_data_home() / "lancedb"
 DEFAULT_TABLE_NAME = "documents"
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBEDDING_DIMENSIONS = 384
+EMBEDDING_BACKEND = "sentence-transformers"
 
 # Default values for ingestion parameters
 DEFAULT_BATCH_SIZE = 32
@@ -142,6 +143,7 @@ def get_default_config() -> dict[str, Any]:
             "chunk_overlap": DEFAULT_CHUNK_OVERLAP,
             "embedding_model": EMBEDDING_MODEL,
             "embedding_dimensions": EMBEDDING_DIMENSIONS,
+            "embedding_backend": EMBEDDING_BACKEND,
         },
         "query": {
             "top_k": DEFAULT_TOP_K,

@@ -3,15 +3,9 @@ from pathlib import Path
 from typing import Optional
 
 import lancedb
-from sentence_transformers import SentenceTransformer
 
-from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME, get_effective_config
-from openground.ingest import get_device, load_model
-
-# Cache the model so repeated queries avoid reloading
-_MODEL_CACHE: Optional[SentenceTransformer] = None
-_DEVICE_CACHE: Optional[str] = None
-_MODEL_NAME_CACHE: Optional[str] = None
+from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
+from openground.embeddings import generate_embeddings
 
 
 def _escape_sql_string(value: str) -> str:
@@ -36,29 +30,6 @@ def _escape_sql_string(value: str) -> str:
     return value
 
 
-def _get_model() -> tuple[SentenceTransformer, str]:
-    global _MODEL_CACHE, _DEVICE_CACHE, _MODEL_NAME_CACHE
-    config = get_effective_config()
-    model_name = config["ingestion"]["embedding_model"]
-
-    if _MODEL_CACHE is None or _MODEL_NAME_CACHE != model_name:
-        device = get_device()
-        _DEVICE_CACHE = device
-        _MODEL_NAME_CACHE = model_name
-        _MODEL_CACHE = load_model(device, model_name=model_name)
-    return _MODEL_CACHE, _DEVICE_CACHE or get_device()
-
-
-def _embed_query(model: SentenceTransformer, query: str) -> list[float]:
-    vec = model.encode(
-        [query],
-        normalize_embeddings=True,
-        convert_to_numpy=True,
-        show_progress_bar=False,
-    )[0]
-    return vec.tolist()
-
-
 def search(
     query: str,
     db_path: Path = DEFAULT_DB_PATH,
@@ -81,16 +52,11 @@ def search(
     if table_name not in db.table_names():
         return "Found 0 matches."
 
-    model, _device = _get_model()
     table = db.open_table(table_name)
 
-    query_vec = _embed_query(model, query)
+    query_vec = generate_embeddings([query])[0]
 
-    search_builder = (
-        table.search(query_type="hybrid")
-        .text(query)  # BM25 / full-text side
-        .vector(query_vec)  # Semantic side
-    )
+    search_builder = table.search(query_type="hybrid").text(query).vector(query_vec)
 
     if library_name:
         safe_name = _escape_sql_string(library_name)

@@ -57,7 +57,7 @@
             "blog"
         ]
     },
-    "tanstack_start": {
+    "tanstack-start": {
         "type": "git_repo",
         "repo_url": "https://github.com/TanStack/router",
         "languages": [
@@ -91,9 +91,23 @@
             "apps/v4/content/docs"
         ]
     },
-    "tanstack_query": {
+    "tanstack-query": {
         "type": "git_repo",
         "repo_url": "https://github.com/TanStack/query",
+        "docs_paths": [
+            "docs"
+        ]
+    },
+    "drizzle-orm": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/drizzle-team/drizzle-orm-docs.git",
+        "docs_paths": [
+            "src/content/docs"
+        ]
+    },
+    "fastembed": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/qdrant/fastembed.git",
         "docs_paths": [
             "docs"
         ]

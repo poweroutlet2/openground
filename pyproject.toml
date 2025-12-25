@@ -34,19 +34,21 @@ dependencies = [
     "typer>=0.9.0,<1.0.0",
     "lancedb>=0.1.0,<1.0.0",
     "sentence-transformers>=2.0.0,<3.0.0",
+    "fastembed>=0.2.0,<1.0.0",
     "torch>=2.0.0,<3.0.0",
     "langchain-text-splitters>=1.0.0,<2.0.0",
     "tqdm>=4.60.0",
     "fastmcp>=2.13.3,<3.0.0",
     "pandas>=2.3.3,<3.0.0",
     "rich>=14.0.0,<15.0.0",
+    "nbformat>=5.0.0,<6.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "mkdocs>=1.6.1",
     "ruff>=0.14.8",
-    "ty>=0.0.5",
+    "ty>=0.0.7",
 ]
 
 [project.urls]

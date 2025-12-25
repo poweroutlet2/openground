@@ -30,10 +30,11 @@ def search_documents_tool(
     """
     Search the official documentation knowledge base to answer user questions.
 
-    Use this to answer user questions about our docs/how-tos/features.
-    Always call this when a question might be answered from the docs.
-    First call list_libraries to see what libraries are available,
-    then filter by library_name.
+    Always used this tool when a question might be answered or confirmed from
+    the documentation.
+
+    First call list_libraries to see what libraries are available, then filter
+    by library_name.
     """
     config = _get_config()
     return search(
@@ -50,9 +51,8 @@ def list_libraries_tool() -> list[str]:
     """
     Retrieve a list of available documentation libraries/frameworks.
 
-    Use this tool if you need to see what documentation is available
-    before performing a search, or to verify if a specific library exists.
-    If the desired library is not in the list, you may prompt the user
+    Use this tool to see what documentation is available before performing a
+    search. If the desired library is not in the list, you may prompt the user
     to add it.
     """
     config = _get_config()

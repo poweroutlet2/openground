@@ -4,6 +4,8 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
+import nbformat
+
 from openground.extract.common import ParsedPage, save_results
 from openground.console import success, error
 
@@ -16,7 +18,7 @@ def filter_documentation_files(
     """
     if allowed_extensions is None:
         # Default to most common doc formats
-        allowed_extensions = {".md", ".rst", ".txt", ".mdx"}
+        allowed_extensions = {".md", ".rst", ".txt", ".mdx", ".ipynb"}
 
     doc_files = []
 
@@ -55,6 +57,27 @@ def filter_documentation_files(
                     doc_files.append(file_path)
 
     return doc_files
+
+
+def extract_notebook_content(file_path: Path) -> tuple[str, dict[str, str]]:
+    """Extract content from Jupyter notebook."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        nb = nbformat.read(f, as_version=4)
+
+    content_parts = []
+    metadata = {
+        "title": nb.metadata.get("title", file_path.stem),
+        "description": f"Jupyter notebook from {file_path.name}",
+    }
+
+    for cell in nb.cells:
+        if cell.cell_type == "markdown":
+            content_parts.append(cell.source)
+        elif cell.cell_type == "code":
+            # Include code cells with a marker
+            content_parts.append(f"```python\n{cell.source}\n```")
+
+    return "\n\n".join(content_parts), metadata
 
 
 def remove_front_matter(content: str) -> tuple[str, dict[str, str]]:
@@ -155,7 +178,9 @@ async def extract_repo(
             ["git", "sparse-checkout", "init", "--cone"], cwd=temp_path, check=True
         )
         subprocess.run(
-            ["git", "sparse-checkout", "set"] + git_docs_paths, cwd=temp_path, check=True
+            ["git", "sparse-checkout", "set"] + git_docs_paths,
+            cwd=temp_path,
+            check=True,
         )
 
         print("Checking out files...")
@@ -198,13 +223,15 @@ async def extract_repo(
 
         for file_path in doc_files:
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    raw_content = f.read()
-
-                content, metadata = remove_front_matter(raw_content)
-
                 relative_path = file_path.relative_to(temp_path)
                 file_url = f"{base_web_url}/{relative_path}"
+
+                if file_path.suffix.lower() == ".ipynb":
+                    content, metadata = extract_notebook_content(file_path)
+                else:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        raw_content = f.read()
+                    content, metadata = remove_front_matter(raw_content)
 
                 # Use title from metadata if available, otherwise filename
                 title = metadata.get("title")

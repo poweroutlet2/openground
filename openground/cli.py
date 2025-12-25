@@ -85,8 +85,10 @@ def add(
     """
     Extract documentation from a source (source file, sitemap, or git) and ingest it.
 
-    This command intelligently detects the source type and performs the extraction
+    This command detects the source type and performs the extraction
     and ingestion in one step.
+
+    For git sources, the following file extensions are parsed: .md, .rst, .txt, .mdx, .ipynb
     """
     from rich.console import Console
 
@@ -130,7 +132,7 @@ def add(
         ):
             source_type = "git_repo"
             if not final_docs_paths:
-                final_docs_paths = ["docs/"]
+                final_docs_paths = ["/"]
         elif final_source.endswith(".xml") or "sitemap" in final_source.lower():
             source_type = "sitemap"
         else:
@@ -191,19 +193,7 @@ def add(
     print("\nStarting ingestion...")
 
     pages = load_parsed_pages(output_dir)
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-
-    ingest_to_lancedb(
-        pages=pages,
-        db_path=db_path,
-        table_name=table_name,
-        chunk_size=config["ingestion"]["chunk_size"],
-        chunk_overlap=config["ingestion"]["chunk_overlap"],
-        batch_size=config["ingestion"]["batch_size"],
-        embedding_model=config["ingestion"]["embedding_model"],
-        embedding_dimensions=config["ingestion"]["embedding_dimensions"],
-    )
+    ingest_to_lancedb(pages=pages)
 
 
 @app.command()
@@ -298,27 +288,6 @@ def ingest(
         "-l",
         help="Library name to ingest from raw_data/{library}.",
     ),
-    batch_size: int | None = typer.Option(
-        None,
-        "--batch-size",
-        "-bs",
-        help="Batch size for embedding generation.",
-        min=1,
-    ),
-    chunk_size: int | None = typer.Option(
-        None,
-        "--chunk-size",
-        "-cs",
-        help="Chunk size for splitting documents.",
-        min=1,
-    ),
-    chunk_overlap: int | None = typer.Option(
-        None,
-        "--chunk-overlap",
-        "-co",
-        help="Overlap size between chunks.",
-        min=0,
-    ),
 ):
     """Chunk documents, generate embeddings, and ingest into the local db."""
     from rich.console import Console
@@ -326,21 +295,6 @@ def ingest(
     console = Console()
     with console.status("[bold green]"):
         from openground.ingest import ingest_to_lancedb, load_parsed_pages
-
-    # Get config
-    config = get_effective_config()
-
-    # Get db_path and table_name from config
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-
-    # Use CLI flags if provided, otherwise use config values
-    if batch_size is None:
-        batch_size = config["ingestion"]["batch_size"]
-    if chunk_size is None:
-        chunk_size = config["ingestion"]["chunk_size"]
-    if chunk_overlap is None:
-        chunk_overlap = config["ingestion"]["chunk_overlap"]
 
     # If library is specified, construct the path and validate it exists
     if library:
@@ -357,16 +311,7 @@ def ingest(
         data_dir = get_library_raw_data_dir(library)
 
     pages = load_parsed_pages(data_dir)
-    ingest_to_lancedb(
-        pages=pages,
-        db_path=db_path,
-        table_name=table_name,
-        chunk_size=chunk_size,  # type: ignore
-        chunk_overlap=chunk_overlap,  # type: ignore
-        batch_size=batch_size,  # type: ignore
-        embedding_model=config["ingestion"]["embedding_model"],
-        embedding_dimensions=config["ingestion"]["embedding_dimensions"],
-    )
+    ingest_to_lancedb(pages=pages)
 
 
 @app.command("query")

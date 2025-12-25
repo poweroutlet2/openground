@@ -2,44 +2,19 @@ from lancedb import Table
 from lancedb.db import DBConnection
 import json
 from pathlib import Path
-from collections.abc import Iterable
 
 import lancedb
 import pyarrow as pa
-import torch
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 from openground.extract.common import ParsedPage
 from openground.config import (
     EMBEDDING_DIMENSIONS,
-    EMBEDDING_MODEL,
+    get_effective_config,
 )
 from openground.console import success
-
-
-def get_device() -> str:
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
-
-
-def load_model(
-    device: str, model_name: str = EMBEDDING_MODEL, show_spinner: bool = True
-) -> SentenceTransformer:
-    """Load the embedding model, optionally showing a spinner."""
-    if show_spinner:
-        from rich.console import Console
-
-        console = Console()
-        with console.status(f"[bold green]Loading embedding model ({model_name})..."):
-            model = SentenceTransformer(model_name, device=device)
-    else:
-        model = SentenceTransformer(model_name, device=device)
-    return model
+from openground.embeddings import generate_embeddings
 
 
 def load_parsed_pages(directory: Path) -> list[ParsedPage]:
@@ -68,9 +43,11 @@ def load_parsed_pages(directory: Path) -> list[ParsedPage]:
 
 def chunk_document(
     page: ParsedPage,
-    chunk_size: int,
-    chunk_overlap: int,
 ) -> list[dict]:
+    config = get_effective_config()
+    chunk_size = config["ingestion"]["chunk_size"]
+    chunk_overlap = config["ingestion"]["chunk_overlap"]
+
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size, chunk_overlap=chunk_overlap
     )
@@ -90,33 +67,6 @@ def chunk_document(
             }
         )
     return records
-
-
-def generate_embeddings(
-    texts: Iterable[str], model: SentenceTransformer, batch_size: int
-) -> list[list[float]]:
-    texts_list = list(texts)
-    all_embeddings = []
-
-    with tqdm(
-        total=len(texts_list),
-        desc="Generating embeddings",
-        unit="text",
-        unit_scale=True,
-    ) as pbar:
-        for i in range(0, len(texts_list), batch_size):
-            batch = texts_list[i : i + batch_size]
-            batch_embeddings = model.encode(
-                sentences=batch,
-                batch_size=len(batch),
-                normalize_embeddings=True,
-                convert_to_numpy=True,
-                show_progress_bar=False,  # We use our own progress bar
-            )
-            all_embeddings.extend(list(batch_embeddings))
-            pbar.update(len(batch))
-
-    return all_embeddings
 
 
 def ensure_table(
@@ -142,27 +92,15 @@ def ensure_table(
 
 def ingest_to_lancedb(
     pages: list[ParsedPage],
-    db_path: Path,
-    table_name: str,
-    chunk_size: int,
-    chunk_overlap: int,
-    batch_size: int,
-    embedding_model: str = EMBEDDING_MODEL,
-    embedding_dimensions: int = EMBEDDING_DIMENSIONS,
-):
+) -> None:
     if not pages:
         print("No pages to ingest.")
         return
 
-    device = get_device()
-    print(f"Using device: {device}")
-    print(f"Using embedding model: {embedding_model}")
-    model = load_model(device, model_name=embedding_model)
-
     # Chunk documents with progress
     all_records = []
     for page in tqdm(pages, desc="Chunking documents", unit="page"):
-        all_records.extend(chunk_document(page, chunk_size, chunk_overlap))
+        all_records.extend(chunk_document(page))
 
     print(f"Prepared {len(all_records)} chunks from {len(pages)} pages.")
 
@@ -172,11 +110,16 @@ def ingest_to_lancedb(
 
     # Generate embeddings with progress
     content_texts = [rec["content"] for rec in all_records]
-    embeddings = generate_embeddings(content_texts, model, batch_size)
+    embeddings = generate_embeddings(content_texts)
 
     # Add embeddings to records
     for rec, emb in zip(all_records, embeddings):
         rec["vector"] = emb
+
+    config = get_effective_config()
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+    embedding_dimensions = config["ingestion"]["embedding_dimensions"]
 
     db = lancedb.connect(str(db_path))
     table = ensure_table(db, table_name, embedding_dimensions=embedding_dimensions)
