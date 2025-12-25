@@ -23,7 +23,7 @@ from openground.config import (
     clear_config_cache,
 )
 from openground.console import success, error, hint, warning
-from openground.source import get_library_config
+from openground.extract.source import get_library_config
 
 
 app = typer.Typer(
@@ -147,7 +147,7 @@ def add(
     async def _run_extract():
         if source_type == "sitemap":
             with console.status("[bold green]"):
-                from openground.extract import extract_pages as extract_main
+                from openground.extract.sitemap import extract_pages as extract_main
 
             await extract_main(
                 sitemap_url=final_source,
@@ -158,7 +158,7 @@ def add(
             )
         elif source_type == "git_repo":
             with console.status("[bold green]"):
-                from openground.git import extract_repo
+                from openground.extract.git import extract_repo
 
             await extract_repo(
                 repo_url=final_source,
@@ -234,7 +234,7 @@ def extract(
 ):
     """Run the extraction pipeline to fetch and parse pages from a sitemap."""
 
-    from openground.extract import extract_pages as extract_main
+    from openground.extract.sitemap import extract_pages
 
     # Get config
     config = get_effective_config()
@@ -247,7 +247,7 @@ def extract(
     output_dir = get_library_raw_data_dir(library)
 
     async def _run():
-        await extract_main(
+        await extract_pages(
             sitemap_url=sitemap_url,
             concurrency_limit=concurrency_limit,  # type: ignore
             library_name=library,
@@ -275,7 +275,7 @@ def extract_git(
     ),
 ):
     """Extract documentation from a git repository using shallow clone and sparse checkout."""
-    from openground.git import extract_repo
+    from openground.extract.git import extract_repo
 
     # Output dir is always computed from library
     output_dir = get_library_raw_data_dir(library)

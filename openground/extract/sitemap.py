@@ -1,15 +1,11 @@
 import asyncio
-import json
-import shutil
 from pathlib import Path
-from typing import TypedDict
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 import aiohttp
 
 from aiohttp import ClientSession, ClientTimeout
 from xml.etree import ElementTree as ET
-from tqdm import tqdm
 from tqdm.asyncio import tqdm as async_tqdm
 
 from openground.config import (
@@ -22,15 +18,7 @@ from openground.console import success
 
 import trafilatura
 
-
-class ParsedPage(TypedDict):
-    url: str
-    library_name: str
-    version: str
-    title: str | None
-    description: str | None
-    last_modified: str | None
-    content: str
+from openground.extract.common import ParsedPage, save_results
 
 
 async def fetch_sitemap_urls(
@@ -162,37 +150,6 @@ def parse_html(url: str, html: str, last_modified: str, library_name: str):
         last_modified=last_modified,
         content=content,
     )
-
-
-async def save_results(results: list[ParsedPage | None], output_dir: Path):
-    """
-    Save the results to a file.
-
-    Args:
-        results: The list of parsed pages to save.
-        output_dir: The raw data directory for the library.
-    """
-
-    if output_dir.exists():
-        print("Clearing existing raw data files for library...")
-        # Clear existing contents for a clean replacement
-        for item in output_dir.iterdir():
-            if item.is_file():
-                item.unlink()
-            elif item.is_dir():
-                shutil.rmtree(item)
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    valid_results = [r for r in results if r is not None]
-
-    for result in tqdm(
-        valid_results, desc="Writing structured raw data files:", unit="file"
-    ):
-        slug = urlparse(result["url"]).path.strip("/").replace("/", "-") or "home"
-        file_name = output_dir / f"{slug}.json"
-        with open(file_name, "w", encoding="utf-8") as f:
-            json.dump(result, f, indent=2)
 
 
 async def extract_pages(

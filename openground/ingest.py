@@ -11,7 +11,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-from openground.extract import ParsedPage
+from openground.extract.common import ParsedPage
 from openground.config import (
     EMBEDDING_DIMENSIONS,
     EMBEDDING_MODEL,

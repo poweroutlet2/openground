@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
-from openground.extract import ParsedPage, save_results
+from openground.extract.common import ParsedPage, save_results
 from openground.console import success, error
 
 
@@ -60,7 +60,7 @@ def filter_documentation_files(
 def remove_front_matter(content: str) -> tuple[str, dict[str, str]]:
     """
     Parse YAML front matter and return (content_without_front_matter, metadata).
-    """ 
+    """
     if not content.startswith("---"):
         return content, {}
 
