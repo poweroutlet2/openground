@@ -1,0 +1,25 @@
+---
+alwaysApply: true
+---
+
+This project is for openground. openground is a tool for extracting framework and library documentation from official sources and letting AI coding agents query it.
+
+1. RAG documentation ingestion pipeline
+2. MCP server
+
+It is written in python and uses tooling such as:
+
+-   uv for package management
+-   ruff for linting `uv run ruff check .`
+-   ty for type checking `uv run ty check .`
+
+The philosophy of openground revolves around simplicity of implementation for maintainers, and ease of use and elegance for users. We want to make users say "wow, it just works." This is of upmost importance.
+
+1. RAG documentation ingestion pipeline
+
+-   Extract: Extracts documentation content from sources like sitemap.xml and git repos and stores pages in structured json format in a raw data directory
+-   Ingest: Chunk, embed, and save documents into lancedb
+
+2. MCP Server
+
+-   Exposes tools to query the lancedb

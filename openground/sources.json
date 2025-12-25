@@ -1,0 +1,79 @@
+{
+    "lancedb": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/lancedb/lancedb",
+        "languages": [
+            "python"
+        ],
+        "directories": [
+            "docs"
+        ]
+    },
+    "typer": {
+        "type": "sitemap",
+        "sitemap_url": "https://typer.tiangolo.com/sitemap.xml",
+        "languages": [
+            "python"
+        ],
+        "filter_keywords": [
+            "typer"
+        ]
+    },
+    "fastapi": {
+        "type": "sitemap",
+        "sitemap_url": "https://fastapi.tiangolo.com/sitemap.xml",
+        "languages": [
+            "python"
+        ],
+        "filter_keywords": [
+            "docs",
+            "documentation",
+            "blog"
+        ]
+    },
+    "pydantic": {
+        "type": "sitemap",
+        "sitemap_url": "https://pydantic.dev/sitemap.xml",
+        "languages": [
+            "python"
+        ],
+        "filter_keywords": [
+            "docs",
+            "documentation",
+            "blog"
+        ]
+    },
+    "langchain": {
+        "type": "sitemap",
+        "sitemap_url": "https://reference.langchain.com/python/sitemap.xml",
+        "languages": [
+            "python",
+            "javascript",
+            "typescript"
+        ],
+        "filter_keywords": [
+            "docs",
+            "documentation",
+            "blog"
+        ]
+    },
+    "tanstack_start": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/TanStack/router",
+        "languages": [
+            "javascript",
+            "typescript"
+        ],
+        "directories": [
+            "docs/start"
+        ]
+    },
+    "inkscape": {
+        "type": "git_repo",
+        "repo_url": "https://gitlab.com/inkscape/inkscape",
+        "languages": [],
+        "directories": [
+            "doc"
+        ]
+    }
+}

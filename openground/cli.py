@@ -23,6 +23,8 @@ from openground.config import (
     clear_config_cache,
 )
 from openground.console import success, error, hint, warning
+from openground.source import get_library_config
+
 
 app = typer.Typer(
     help="Openground is a CLI for storing and querying documentation in a local vector database."
@@ -55,17 +57,23 @@ def ensure_config_exists(ctx: typer.Context):
 
 @app.command("add")
 def add(
-    library: str = typer.Option(
-        ..., "--library", "-l", help="Name of the library/framework."
+    library: str = typer.Argument(
+        ..., help="Name of the library (or source key if no source is provided)."
     ),
-    sitemap_url: str = typer.Option(
-        ..., "--sitemap-url", "-s", help="Root sitemap URL to crawl."
+    source: Optional[str] = typer.Option(
+        None, "--source", "-s", help="Root sitemap URL or Git repo URL to crawl."
+    ),
+    docs_path: Optional[str] = typer.Option(
+        None,
+        "--docs-path",
+        "-d",
+        help="Path to documentation within a git repo (e.g., 'docs/'). Only used for git sources. Defaults to root of repo.",
     ),
     filter_keywords: list[str] = typer.Option(
         [],
         "--filter-keyword",
         "-f",
-        help="Keyword filter applied to sitemap URLs. If none are provided, all URLs are extracted. Can be specified multiple times (e.g., -f docs -f /blog).",
+        help="String filter for sitemap URLs. Only used for sitemap sources. Can be specified multiple times (e.g., -f docs -f /blog)",
     ),
     yes: bool = typer.Option(
         False,
@@ -74,40 +82,104 @@ def add(
         help="Skip confirmation prompt between extract and ingest.",
     ),
 ):
-    """Extract pages from a sitemap and ingest them into the local db in one step."""
+    """
+    Extract documentation from a source (source file, sitemap, or git) and ingest it.
+
+    This command intelligently detects the source type and performs the extraction
+    and ingestion in one step.
+    """
     from rich.console import Console
 
     console = Console()
-    with console.status("[bold green]"):
-        from openground.extract import extract_pages as extract_main
-        from openground.ingest import ingest_to_lancedb, load_parsed_pages
-
-    # Get config
     config = get_effective_config()
 
-    # Construct output directory from library
+    # Resolve configuration from source file if possible
+    source_config = get_library_config(library)
+    source_type = None
+    final_source = source
+    final_docs_path = docs_path
+    final_filter_keywords = filter_keywords
+
+    if source_config:
+        source_type = source_config.get("type")
+        if not final_source:
+            if source_type == "sitemap":
+                final_source = source_config.get("sitemap_url")
+            elif source_type == "git_repo":
+                final_source = source_config.get("repo_url")
+
+        if not final_docs_path and source_type == "git_repo":
+            # Map 'directories' from current json to docs_path
+            dirs = source_config.get("directories", [])
+            final_docs_path = dirs[0] if dirs else "/"
+
+        if not final_filter_keywords and source_type == "sitemap":
+            final_filter_keywords = source_config.get("filter_keywords", [])
+
+    # Detect if source is provided manually or type is unknown
+    if not final_source:
+        error(
+            f"No source provided for library '{library}'. "
+            f"Please provide a --source URL or use a library from the source file."
+        )
+        raise typer.Exit(1)
+
+    if not source_type:
+        # Detect type from URL
+        if final_source.endswith(".git") or any(
+            domain in final_source for domain in ["github.com", "gitlab.com"]
+        ):
+            source_type = "git_repo"
+            if not final_docs_path:
+                final_docs_path = "docs/"
+        elif final_source.endswith(".xml") or "sitemap" in final_source.lower():
+            source_type = "sitemap"
+        else:
+            # Try sitemap by default with warning
+            source_type = "sitemap"
+            warning(
+                f"Could not reliably detect source type for {final_source}. Defaulting to sitemap."
+            )
+
+    # Extract
     output_dir = get_library_raw_data_dir(library)
 
     async def _run_extract():
-        await extract_main(
-            sitemap_url=sitemap_url,
-            concurrency_limit=config["extraction"]["concurrency_limit"],
-            library_name=library,
-            output_dir=output_dir,
-            filter_keywords=filter_keywords,
-        )
+        if source_type == "sitemap":
+            with console.status("[bold green]"):
+                from openground.extract import extract_pages as extract_main
+
+            await extract_main(
+                sitemap_url=final_source,
+                concurrency_limit=config["extraction"]["concurrency_limit"],
+                library_name=library,
+                output_dir=output_dir,
+                filter_keywords=final_filter_keywords,
+            )
+        elif source_type == "git_repo":
+            with console.status("[bold green]"):
+                from openground.git import extract_repo
+
+            await extract_repo(
+                repo_url=final_source,
+                docs_path=final_docs_path or "/",
+                output_dir=output_dir,
+                library_name=library,
+            )
+
+    with console.status("[bold green]"):
+        from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
     asyncio.run(_run_extract())
 
-    data_dir = get_library_raw_data_dir(library)
-    if not data_dir.exists():
+    # Ingest
+    if not output_dir.exists():
         raise typer.BadParameter(
-            f"Extraction completed but data directory not found at {data_dir}."
+            f"Extraction completed but data directory not found at {output_dir}."
         )
 
-    json_files = list(data_dir.glob("*.json"))
-    page_count = len(json_files)
-    success(f"\nExtraction complete: {page_count} pages extracted to {data_dir}")
+    page_count = len(list(output_dir.glob("*.json")))
+    success(f"\nExtraction complete: {page_count} pages extracted to {output_dir}")
 
     if not yes:
         print("\nPress Enter to continue with ingestion, or Ctrl+C to exit...")
@@ -118,9 +190,8 @@ def add(
             raise typer.Abort()
 
     print("\nStarting ingestion...")
-    pages = load_parsed_pages(data_dir)
 
-    # Get db_path and table_name from config
+    pages = load_parsed_pages(output_dir)
     db_path = Path(config["db_path"]).expanduser()
     table_name = config["table_name"]
 
@@ -182,6 +253,39 @@ def extract(
             library_name=library,
             output_dir=output_dir,
             filter_keywords=filter_keywords,
+        )
+
+    asyncio.run(_run())
+
+
+@app.command("extract-git")
+def extract_git(
+    repo_url: str = typer.Option(..., "--repo-url", "-r", help="Git repository URL."),
+    docs_path: str = typer.Option(
+        ...,
+        "--docs-path",
+        "-d",
+        help="Path to documentation within the repo. Use '/' for the whole repo or 'docs/' for a specific folder.",
+    ),
+    library: str = typer.Option(
+        DEFAULT_LIBRARY_NAME,
+        "--library",
+        "-l",
+        help="Name of the library/framework for this documentation.",
+    ),
+):
+    """Extract documentation from a git repository using shallow clone and sparse checkout."""
+    from openground.git import extract_repo
+
+    # Output dir is always computed from library
+    output_dir = get_library_raw_data_dir(library)
+
+    async def _run():
+        await extract_repo(
+            repo_url=repo_url,
+            docs_path=docs_path,
+            output_dir=output_dir,
+            library_name=library,
         )
 
     asyncio.run(_run())
