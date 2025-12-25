@@ -4,12 +4,34 @@ Openground provides a comprehensive CLI for managing documentation libraries. Th
 
 ## Core Workflow Commands
 
+### [add](add.md)
+Extract and ingest documentation in one step. Automatically detects if the source is a sitemap or a git repository.
+
+```bash
+# Using a sitemap
+openground add example --source https://docs.example.com/sitemap.xml
+
+# Using a git repo
+openground add example --source https://github.com/user/repo.git
+```
+
+## Core Extraction Commands
+
 ### [extract](extract.md)
 Fetch and parse documentation pages from a sitemap URL.
 
 ```bash
 openground extract --sitemap-url URL --library NAME
 ```
+
+### [extract-git](extract-git.md)
+Extract documentation from a git repository using shallow clone and sparse checkout.
+
+```bash
+openground extract-git --repo-url URL --docs-path docs/ --library NAME
+```
+
+## Core Processing Commands
 
 ### [ingest](ingest.md)
 Chunk documents, generate embeddings, and load into LanceDB.
@@ -34,6 +56,13 @@ List all ingested documentation libraries.
 openground ls
 ```
 
+### [list-raw-libraries](list-libraries.md#list-raw-libraries)
+List available libraries in the raw data directory that have been extracted but not yet ingested.
+
+```bash
+openground list-raw-libraries
+```
+
 ### [rm](remove-library.md)
 Remove a library from the database.
 
@@ -50,19 +79,7 @@ openground config set KEY VALUE
 openground config get KEY
 ```
 
-## Combined Commands
-
-### [add](add.md)
-Extract and ingest in one step (combines `extract` and `ingest`).
-
-```bash
-openground add \
-  --sitemap-url URL \
-  --library NAME \
-  -y
-```
-
-All flags from both `extract` and `ingest` are available.
+## MCP Integration Commands
 
 ### install-mcp
 Configure the MCP server for AI coding assistants.
@@ -72,6 +89,7 @@ openground install-mcp              # Show config
 openground install-mcp --cursor     # Auto-configure Cursor
 openground install-mcp --claude-code # Auto-configure Claude Code
 openground install-mcp --opencode   # Auto-configure OpenCode
+openground install-mcp --wsl        # Generate WSL-compatible config
 ```
 
 See [MCP Integration](../mcp-integration.md) for details.
@@ -80,14 +98,16 @@ See [MCP Integration](../mcp-integration.md) for details.
 
 | Command | Purpose | Key Flags |
 |---------|---------|-----------|
+| `add` | Extract + ingest (auto-detect) | `--source`, `--library`, `--yes` |
 | `extract` | Download docs from sitemap | `--sitemap-url`, `--library`, `-f` (filter) |
+| `extract-git` | Download docs from git | `--repo-url`, `--docs-path`, `--library` |
 | `ingest` | Index docs in database | `--library`, `--chunk-size`, `--batch-size` |
 | `query` | Search documentation | query text, `--library`, `--top-k` |
-| `ls` | List libraries | None |
+| `ls` | List ingested libraries | None |
+| `list-raw-libraries` | List raw data libraries | None |
 | `rm` | Remove library | library name, `-y` (skip confirm) |
 | `config` | Manage settings | `show`, `get`, `set`, `reset`, `path` |
-| `add` | Extract + ingest | All extract and ingest flags |
-| `install-mcp` | Setup MCP server | `--cursor`, `--claude-code`, `--opencode` |
+| `install-mcp` | Setup MCP server | `--cursor`, `--claude-code`, `--opencode`, `--wsl` |
 
 ## Common Patterns
 
@@ -95,9 +115,16 @@ See [MCP Integration](../mcp-integration.md) for details.
 
 ```bash
 # Extract, ingest, and verify
-openground add -s URL -l NAME -y
+openground add -s https://docs.example.com/sitemap.xml -l example -y
 openground ls
-openground query "test query" -l NAME
+openground query "how to use" -l example
+```
+
+### Process from Git
+
+```bash
+# Extract from git and ingest
+openground add -s https://github.com/example/repo.git -l example -y
 ```
 
 ### Update Existing Documentation
@@ -131,11 +158,11 @@ openground config --help
 
 Browse the detailed documentation for each command:
 
-- [extract](extract.md) - Detailed extraction options
-- [ingest](ingest.md) - Chunking and embedding configuration
 - [add](add.md) - Extract and ingest in one step
+- [extract](extract.md) - Detailed extraction options
+- [extract-git](extract-git.md) - Extract from git repositories
+- [ingest](ingest.md) - Chunking and embedding configuration
 - [query](query.md) - Search and filtering
 - [ls](list-libraries.md) - Listing libraries
 - [rm](remove-library.md) - Removing libraries
 - [config](config.md) - Configuration management
-

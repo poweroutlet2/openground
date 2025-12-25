@@ -23,6 +23,9 @@ The `extract` command downloads and parses documentation pages from a sitemap. I
 
 The extracted JSON files can then be ingested into the database using the [`ingest`](ingest.md) command.
 
+!!! tip "Extracting from Git"
+    If the documentation is hosted in a git repository and doesn't have a sitemap, use the [`extract-git`](extract-git.md) command instead.
+
 ## Arguments
 
 ### Required

@@ -4,26 +4,31 @@ This guide will help you install openground and get your first documentation lib
 
 ## Installation
 
+### Using uv (recommended)
+
+[uv](https://docs.astral.sh/uv/) is a fast Python package installer and manager. To install openground as a tool:
+
+```bash
+uv tool install openground
+```
+
 ### Using pip
 
 ```bash
 pip install openground
 ```
 
-### Using uv (recommended)
-
-[uv](https://docs.astral.sh/uv/) is a fast Python package installer. If you have it installed:
-
-```bash
-uv tool install openground
-```
-
 ### Verify Installation
 
-After installation, you should have two commands available:
+After installation, you should have the `openground` command available:
 
 ```bash
 openground --help       # Main CLI for managing documentation
+```
+
+Openground also installs an MCP server entry point:
+
+```bash
 openground-mcp --help   # MCP server for AI agents
 ```
 
@@ -33,28 +38,35 @@ Let's walk through indexing documentation from a website and querying it.
 
 ### Option 1: Extract and Ingest in One Step
 
-The fastest way to get started is with the combined command:
+The fastest way to get started is with the combined `add` command:
 
 ```bash
-openground add \
-  --sitemap-url https://docs.example.com/sitemap.xml \
-  --library example-docs \
+# Using a sitemap
+openground add example-docs \
+  --source https://docs.example.com/sitemap.xml \
+  -y
+
+# Using a git repository
+openground add example-docs \
+  --source https://github.com/example/repo.git \
   -y
 ```
 
 This will:
 
-1. Extract all pages from the sitemap
+1. Extract all pages from the sitemap or files from the git repo
 2. Save them as JSON in your data directory
 3. Chunk and embed the content
 4. Store everything in LanceDB for searching
 
-!!! tip "Filtering URLs"
+!!! tip "Source Autodetection"
+    The `add` command automatically detects if the source is a sitemap (ends in `.xml` or contains `sitemap`) or a git repository (ends in `.git` or hosted on GitHub/GitLab).
+
+!!! tip "Filtering URLs (Sitemap only)"
     Add `-f` flags to only extract URLs containing specific keywords:
     ```bash
-    openground add \
-      --sitemap-url https://docs.databricks.com/aws/en/sitemap.xml \
-      --library databricks \
+    openground add databricks \
+      --source https://docs.databricks.com/aws/en/sitemap.xml \
       -f docs -f guide \
       -y
     ```
@@ -65,6 +77,8 @@ For more control, you can split the process into two steps:
 
 #### Step 1: Extract Documentation
 
+**From a Sitemap:**
+
 ```bash
 openground extract \
   --sitemap-url https://docs.example.com/sitemap.xml \
@@ -72,7 +86,16 @@ openground extract \
   -f docs -f guide
 ```
 
-This downloads and parses all documentation pages, saving them as JSON files in `~/.local/share/openground/raw_data/example-docs/`.
+**From a Git Repository:**
+
+```bash
+openground extract-git \
+  --repo-url https://github.com/example/repo.git \
+  --docs-path docs/ \
+  --library example-docs
+```
+
+These commands download and parse all documentation pages, saving them as JSON files in `~/.local/share/openground/raw_data/example-docs/`.
 
 #### Step 2: Ingest into Database
 

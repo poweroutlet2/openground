@@ -8,7 +8,9 @@ nav:
   - Configuration: configuration.md
   - Commands:
     - Overview: commands/index.md
+    - add: commands/add.md
     - extract: commands/extract.md
+    - extract-git: commands/extract-git.md
     - ingest: commands/ingest.md
     - query: commands/query.md
     - ls: commands/list-libraries.md

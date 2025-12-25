@@ -6,7 +6,7 @@ Openground is a system for managing documentation in an agent-friendly manner. I
 
 Modern AI coding assistants need access to up-to-date documentation to provide accurate help. Openground bridges this gap by:
 
-- **Extracting** documentation from websites via sitemaps
+- **Extracting** documentation from websites via sitemaps or git repositories
 - **Indexing** content with hybrid search (semantic + BM25)
 - **Serving** documentation to AI agents through the Model Context Protocol (MCP)
 
@@ -27,8 +27,8 @@ Your AI assistant can then query your project's documentation directly, getting 
           │  │   │   EXTRACT   │     │   INGEST    │     │    LOCAL LANCEDB    │     │  │
           │  │   │  • Sitemap  │     │  • Chunking │     │  • Vector Store     │     │  │
           │  │   │    Parsing  │────>│  • Local    │────>│  • BM25 FTS Index   │     │  │
-          │  │   │  • Web      │     │    Embedding│     │  • Hybrid Search    │     │  │
-          │  │   │    Scraping │     │    Model    │     │                     │     │  │
+          │  │   │  • Git Repo │     │    Embedding│     │  • Hybrid Search    │     │  │
+          │  │   │    Walking  │     │    Model    │     │                     │     │  │
           │  │   └─────────────┘     └─────────────┘     └──────────┬──────────┘     │  │
           │  │         │                    ^                       │                │  │
           │  │         ▼                    |                       │                │  │
@@ -46,8 +46,8 @@ Your AI assistant can then query your project's documentation directly, getting 
           │  │   │                     │      │                                 │    │  │
           │  │   │  openground query   │      │  • search_documents_tool        │    │  │
           │  │   │  openground ls      │      │  • list_libraries_tool          │    │  │
-          │  │   │  openground rm      │      │  • get_full_content_tool        │    │  │
-          │  │   │                     │      │                                 │    │  │
+          │  │   │  openground rm      │      │  • search_available_libs_tool   │    │  │
+          │  │   │  openground config  │      │  • get_full_content_tool        │    │  │
           │  │   └─────────────────────┘      └─────────────────────────────────┘    │  │
           │  │            │                                 │                        │  │
           │  └────────────│─────────────────────────────────│────────────────────────┘  │
@@ -63,18 +63,18 @@ Your AI assistant can then query your project's documentation directly, getting 
 
 ## Data Flow
 
-### 1. Extract (`openground extract`)
-- Parses sitemap XML from documentation websites
-- Downloads and scrapes page content
+### 1. Extract (`openground add`, `extract`, or `extract-git`)
+- Parses sitemap XML from documentation websites OR walks files in a git repository
+- Downloads and scrapes page content (for sitemaps) or reads markdown/text files (for git)
 - Saves content in structured JSON format into the raw data directory
-- Uses aiohttp and trafilatura for efficient web scraping
+- Uses aiohttp and trafilatura for web scraping, or shallow git clones for repositories
 
 ### 2. Ingest (`openground ingest`)
 - Loads JSON files from the raw data directory
 - Splits documents into chunks with configurable overlap
 - Generates embeddings using a local model (sentence-transformers)
 - Stores vectors and creates BM25 full-text search index in LanceDB
-- Uses langchain_text_splitters and sentence_transformers
+- Uses langchain-text-splitters and sentence-transformers
 
 ### 3. Query (CLI or MCP)
 - Performs hybrid search combining semantic similarity and BM25 ranking
@@ -84,13 +84,20 @@ Your AI assistant can then query your project's documentation directly, getting 
 ## Quick Example
 
 ```bash
-# Install openground
+# Install openground (recommended)
+uv tool install openground
+
+# Or using pip
 pip install openground
 
-# Extract and ingest documentation
-openground add \
-  --sitemap-url https://docs.example.com/sitemap.xml \
-  --library example-docs \
+# Extract and ingest documentation from a sitemap
+openground add example-docs \
+  --source https://docs.example.com/sitemap.xml \
+  -y
+
+# Or from a git repository
+openground add example-docs \
+  --source https://github.com/example/repo.git \
   -y
 
 # Query from CLI

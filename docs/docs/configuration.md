@@ -65,36 +65,38 @@ openground config reset
 {
   "db_path": "~/.local/share/openground/lancedb",
   "table_name": "documents",
+  "raw_data_dir": "~/.local/share/openground/raw_data",
   "extraction": {
     "concurrency_limit": 50
   },
   "ingestion": {
     "batch_size": 32,
     "chunk_size": 1000,
-    "chunk_overlap": 200
+    "chunk_overlap": 200,
+    "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+    "embedding_dimensions": 384
   },
   "query": {
     "top_k": 5
-  },
-  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
-  "embedding_dimensions": 384
+  }
 }
 ```
 
 ### Configuration Options
 
-#### Database Settings
+#### Database and Storage Settings
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `db_path` | string | `~/.local/share/openground/lancedb` | Path to LanceDB database directory |
 | `table_name` | string | `documents` | Name of the database table |
+| `raw_data_dir` | string | `~/.local/share/openground/raw_data` | Base directory for storing extracted JSON files |
 
 !!! note
-    The `db_path` uses platform-specific defaults:
+    These paths use platform-specific defaults:
     
-    - Linux/macOS: `~/.local/share/openground/lancedb`
-    - Windows: `~/AppData/Local/openground/lancedb`
+    - Linux/macOS: `~/.local/share/openground/`
+    - Windows: `~/AppData/Local/openground/`
 
 #### Extraction Settings
 
@@ -115,6 +117,8 @@ openground config set extraction.concurrency_limit 10
 | `ingestion.batch_size` | integer | `32` | Batch size for generating embeddings |
 | `ingestion.chunk_size` | integer | `1000` | Maximum characters per document chunk |
 | `ingestion.chunk_overlap` | integer | `200` | Overlap between consecutive chunks |
+| `ingestion.embedding_model` | string | `sentence-transformers/all-MiniLM-L6-v2` | HuggingFace model identifier |
+| `ingestion.embedding_dimensions` | integer | `384` | Embedding vector dimensions |
 
 **Chunk Size**: Controls how documents are split. Smaller chunks = more precise search, larger chunks = more context per result.
 
@@ -122,17 +126,8 @@ openground config set extraction.concurrency_limit 10
 
 **Batch Size**: Affects memory usage during ingestion. Lower values use less memory but take longer.
 
-Example adjustments:
-
-```bash
-# More granular chunks for precise searches
-openground config set ingestion.chunk_size 500
-openground config set ingestion.chunk_overlap 100
-
-# Larger chunks for more context
-openground config set ingestion.chunk_size 2000
-openground config set ingestion.chunk_overlap 400
-```
+!!! warning "Changing Embedding Models"
+    If you change the embedding model or dimensions, you must re-ingest all your libraries. The model downloads on first use and is cached locally.
 
 #### Query Settings
 
@@ -142,28 +137,6 @@ openground config set ingestion.chunk_overlap 400
 
 ```bash
 openground config set query.top_k 10
-```
-
-#### Embedding Model Settings
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `embedding_model` | string | `sentence-transformers/all-MiniLM-L6-v2` | HuggingFace model identifier |
-| `embedding_dimensions` | integer | `384` | Embedding vector dimensions |
-
-!!! warning "Changing Embedding Models"
-    If you change the embedding model or dimensions, you must re-ingest all your libraries. The model downloads on first use and is cached locally.
-
-Popular alternative models:
-
-```bash
-# Faster, smaller model (good for resource-constrained environments)
-openground config set embedding_model sentence-transformers/all-MiniLM-L12-v2
-openground config set embedding_dimensions 384
-
-# Better quality, larger model
-openground config set embedding_model sentence-transformers/all-mpnet-base-v2
-openground config set embedding_dimensions 768
 ```
 
 ## Configuration Precedence
@@ -190,27 +163,14 @@ Running `openground query "test" --top-k 3` will return **3 results** (CLI flag 
 
 Running `openground query "test"` will return **10 results** (config value).
 
-### Config-Only Options
-
-These options can **only** be set via `openground config set` and have no CLI flags:
-
-- `db_path`
-- `table_name`
-- `embedding_model`
-- `embedding_dimensions`
-
-This ensures consistency across all commands accessing the database.
-
 ## Data Storage
 
 In addition to the configuration file, openground stores data in:
 
-- **Raw extracted data**: `~/.local/share/openground/raw_data/{library}/`
-- **Database**: Path specified by `db_path` (default: `~/.local/share/openground/lancedb/`)
+- **Raw extracted data**: `{raw_data_dir}/{library}/`
+- **Database**: `{db_path}/`
 
-On Windows, the data directory is `~/AppData/Local/openground/`.
-
-You can override the data directory by setting the `XDG_DATA_HOME` environment variable.
+By default, these are in `~/.local/share/openground/` on Linux/macOS and `~/AppData/Local/openground/` on Windows.
 
 ## Examples
 
@@ -232,8 +192,8 @@ For production with better quality search:
 openground config set ingestion.chunk_size 1500
 openground config set ingestion.chunk_overlap 300
 openground config set query.top_k 10
-openground config set embedding_model sentence-transformers/all-mpnet-base-v2
-openground config set embedding_dimensions 768
+openground config set ingestion.embedding_model sentence-transformers/all-mpnet-base-v2
+openground config set ingestion.embedding_dimensions 768
 ```
 
 ### Resource-Constrained Environment
@@ -245,4 +205,3 @@ openground config set extraction.concurrency_limit 10
 openground config set ingestion.batch_size 8
 openground config set ingestion.chunk_size 600
 ```
-
