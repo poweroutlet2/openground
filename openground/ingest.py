@@ -10,7 +10,6 @@ from tqdm import tqdm
 
 from openground.extract.common import ParsedPage
 from openground.config import (
-    EMBEDDING_DIMENSIONS,
     get_effective_config,
 )
 from openground.console import success
@@ -69,11 +68,91 @@ def chunk_document(
     return records
 
 
+def _get_table_metadata(table: Table) -> dict | None:
+    """Extract embedding metadata from table schema.
+
+    Args:
+        table: The LanceDB table to check.
+
+    Returns:
+        Dictionary with 'embedding_backend' and 'embedding_model' keys if metadata exists,
+        None otherwise.
+    """
+    schema = table.schema
+    if schema.metadata is None:
+        raise ValueError("Table metadata not found")
+
+    # PyArrow metadata is stored as bytes, need to decode both keys and values
+    metadata_dict = {}
+    for key, value in schema.metadata.items():
+        # Decode key if it's bytes
+        decoded_key = key.decode("utf-8") if isinstance(key, bytes) else key
+        # Decode value if it's bytes
+        decoded_value = value.decode("utf-8") if isinstance(value, bytes) else value
+        metadata_dict[decoded_key] = decoded_value
+
+    # Check if embedding metadata exists
+    if "embedding_backend" in metadata_dict and "embedding_model" in metadata_dict:
+        return {
+            "embedding_backend": metadata_dict["embedding_backend"],
+            "embedding_model": metadata_dict["embedding_model"],
+        }
+    return None
+
+
+def _validate_table_metadata(table: Table, backend: str, model: str) -> None:
+    """Validate that table metadata matches current embedding configuration.
+
+    Args:
+        table: The LanceDB table to validate.
+        backend: Current embedding backend from config.
+        model: Current embedding model from config.
+
+    Raises:
+        ValueError: If table metadata exists and doesn't match current config.
+    """
+    stored_metadata = _get_table_metadata(table)
+
+    if stored_metadata is None:
+        print(stored_metadata)
+        raise ValueError(f"Table metadata not found: {stored_metadata}")
+
+    stored_backend = stored_metadata["embedding_backend"]
+    stored_model = stored_metadata["embedding_model"]
+
+    if stored_backend != backend or stored_model != model:
+        raise ValueError(
+            f"Embedding configuration mismatch detected!\n\n"
+            f"This table was created with:\n"
+            f"  Backend: {stored_backend}\n"
+            f"  Model: {stored_model}\n\n"
+            f"Current configuration is:\n"
+            f"  Backend: {backend}\n"
+            f"  Model: {model}\n\n"
+            f"To resolve this, you can:\n"
+            f"  1. Change your config to match the table's original settings\n"
+            f"  2. Run `openground nuke embeddings` and then `openground ingest`\n"
+        )
+
+
 def ensure_table(
-    db: DBConnection, table_name: str, embedding_dimensions: int = EMBEDDING_DIMENSIONS
+    db: DBConnection,
+    table_name: str,
+    embedding_dimensions: int,
+    embedding_backend: str,
+    embedding_model: str,
 ) -> Table:
     if table_name in db.table_names():
-        return db.open_table(table_name)
+        # Table exists - validate metadata matches current config
+        table = db.open_table(table_name)
+        _validate_table_metadata(table, embedding_backend, embedding_model)
+        return table
+
+    # Create new table with embedding metadata in schema
+    metadata = {
+        "embedding_backend": embedding_backend,
+        "embedding_model": embedding_model,
+    }
     schema = pa.schema(
         [
             pa.field("url", pa.string()),
@@ -85,7 +164,8 @@ def ensure_table(
             pa.field("content", pa.string()),
             pa.field("chunk_index", pa.int64()),
             pa.field("vector", pa.list_(pa.float32(), embedding_dimensions)),
-        ]
+        ],
+        metadata=metadata,
     )
     return db.create_table(table_name, data=[], mode="create", schema=schema)
 
@@ -96,6 +176,22 @@ def ingest_to_lancedb(
     if not pages:
         print("No pages to ingest.")
         return
+
+    config = get_effective_config()
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+    embedding_dimensions = config["ingestion"]["embedding_dimensions"]
+    embedding_backend = config["ingestion"]["embedding_backend"]
+    embedding_model = config["ingestion"]["embedding_model"]
+
+    db = lancedb.connect(str(db_path))
+    table = ensure_table(
+        db,
+        table_name,
+        embedding_dimensions=embedding_dimensions,
+        embedding_backend=embedding_backend,
+        embedding_model=embedding_model,
+    )
 
     # Chunk documents with progress
     all_records = []
@@ -115,14 +211,6 @@ def ingest_to_lancedb(
     # Add embeddings to records
     for rec, emb in zip(all_records, embeddings):
         rec["vector"] = emb
-
-    config = get_effective_config()
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-    embedding_dimensions = config["ingestion"]["embedding_dimensions"]
-
-    db = lancedb.connect(str(db_path))
-    table = ensure_table(db, table_name, embedding_dimensions=embedding_dimensions)
 
     # Save to LanceDB with progress indication
     print(f"Inserting {len(all_records)} chunks into LanceDB...")

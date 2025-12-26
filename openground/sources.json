@@ -10,13 +10,13 @@
         ]
     },
     "typer": {
-        "type": "sitemap",
-        "sitemap_url": "https://typer.tiangolo.com/sitemap.xml",
+        "type": "git_repo",
+        "repo_url": "https://github.com/fastapi/typer.git",
         "languages": [
             "python"
         ],
-        "filter_keywords": [
-            "typer"
+        "docs_paths": [
+            "docs"
         ]
     },
     "fastapi": {

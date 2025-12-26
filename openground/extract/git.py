@@ -153,7 +153,7 @@ async def extract_repo(
             str(temp_path),
         ]
 
-        result = subprocess.run(clone_cmd, capture_output=True, text=True)
+        result = subprocess.run(clone_cmd, capture_output=False, text=True)
         if result.returncode != 0:
             error(f"Failed to clone repository: {result.stderr}")
             return
@@ -175,12 +175,16 @@ async def extract_repo(
         print(f"Setting sparse-checkout to: {', '.join(git_docs_paths)}")
 
         subprocess.run(
-            ["git", "sparse-checkout", "init", "--cone"], cwd=temp_path, check=True
+            ["git", "sparse-checkout", "init", "--cone"],
+            cwd=temp_path,
+            check=True,
+            capture_output=False,
         )
         subprocess.run(
             ["git", "sparse-checkout", "set"] + git_docs_paths,
             cwd=temp_path,
             check=True,
+            capture_output=False,
         )
 
         print("Checking out files...")
