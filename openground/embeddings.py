@@ -38,28 +38,23 @@ def _generate_embeddings_sentence_transformers(
     texts_list = list(texts)
     all_embeddings = []
 
-    console = Console()
-
-    with console.status(
-        f"[bold green]Generating embeddings using sentence-transformers ({model.model_name})..."
-    ):
-        with tqdm(
-            total=len(texts_list),
-            desc="Generating embeddings",
-            unit="text",
-            unit_scale=True,
-        ) as pbar:
-            for i in range(0, len(texts_list), batch_size):
-                batch = texts_list[i : i + batch_size]
-                batch_embeddings = model.encode(
-                    sentences=batch,
-                    batch_size=len(batch),
-                    normalize_embeddings=True,
-                    convert_to_numpy=True,
-                    show_progress_bar=False,
-                )
-                all_embeddings.extend(list(batch_embeddings))
-                pbar.update(len(batch))
+    with tqdm(
+        total=len(texts_list),
+        desc="Generating embeddings",
+        unit="text",
+        unit_scale=True,
+    ) as pbar:
+        for i in range(0, len(texts_list), batch_size):
+            batch = texts_list[i : i + batch_size]
+            batch_embeddings = model.encode(
+                sentences=batch,
+                batch_size=len(batch),
+                normalize_embeddings=True,
+                convert_to_numpy=True,
+                show_progress_bar=False,
+            )
+            all_embeddings.extend(list(batch_embeddings))
+            pbar.update(len(batch))
 
     return all_embeddings
 
@@ -83,26 +78,29 @@ def _generate_embeddings_fastembed(texts: Iterable[str]) -> list[list[float]]:
 
     texts_list = list(texts)
     all_embeddings = []
-    model = TextEmbedding(model_name=model_name)
-    console = Console()
+    model = TextEmbedding(
+        model_name=model_name,
+        providers=[
+            # "TensorrtExecutionProvider",
+            "CUDAExecutionProvider",
+            "CPUExecutionProvider",
+        ],
+    )
 
-    with console.status(
-        f"[bold green]Generating embeddings using fastembed ({model.model_name})..."
-    ):
-        with tqdm(
-            total=len(texts_list),
-            desc="Generating embeddings",
-            unit="text",
-            unit_scale=True,
-        ) as pbar:
-            # fastembed processes in batches internally, but we can control batching
-            for i in range(0, len(texts_list), batch_size):
-                batch = texts_list[i : i + batch_size]
-                # passage_embed returns a generator of numpy arrays
-                batch_embeddings = list(model.passage_embed(batch))
-                # Convert numpy arrays to lists of floats
-                all_embeddings.extend([emb.tolist() for emb in batch_embeddings])
-                pbar.update(len(batch))
+    with tqdm(
+        total=len(texts_list),
+        desc="Generating embeddings",
+        unit="text",
+        unit_scale=True,
+    ) as pbar:
+        # fastembed processes in batches internally, but we can control batching
+        for i in range(0, len(texts_list), batch_size):
+            batch = texts_list[i : i + batch_size]
+            # passage_embed returns a generator of numpy arrays
+            batch_embeddings = list(model.passage_embed(batch))
+            # Convert numpy arrays to lists of floats
+            all_embeddings.extend([emb.tolist() for emb in batch_embeddings])
+            pbar.update(len(batch))
 
     return all_embeddings
 

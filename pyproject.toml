@@ -42,6 +42,7 @@ dependencies = [
     "pandas>=2.3.3,<3.0.0",
     "rich>=14.0.0,<15.0.0",
     "nbformat>=5.0.0,<6.0.0",
+    "onnxruntime-gpu>=1.23.2, <2.0.0",
 ]
 
 [dependency-groups]
