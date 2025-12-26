@@ -117,7 +117,7 @@ openground config set ingestion.embedding_dimensions 768
 ```
 
 !!! note
-    After changing the embedding model, you must re-ingest all libraries.
+    After changing the embedding model, you must re-embed all libraries.
 
 ## See Also
 

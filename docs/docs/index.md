@@ -24,7 +24,7 @@ Your AI assistant can then query your project's documentation directly, getting 
           │  │                                                                       │  │
           │  │                                                                       |  |  
           │  │   ┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐     │  │
-          │  │   │   EXTRACT   │     │   INGEST    │     │    LOCAL LANCEDB    │     │  │
+          │  │   │   EXTRACT   │     │    EMBED    │     │    LOCAL LANCEDB    │     │  │
           │  │   │  • Sitemap  │     │  • Chunking │     │  • Vector Store     │     │  │
           │  │   │    Parsing  │────>│  • Local    │────>│  • BM25 FTS Index   │     │  │
           │  │   │  • Git Repo │     │    Embedding│     │  • Hybrid Search    │     │  │
@@ -69,7 +69,7 @@ Your AI assistant can then query your project's documentation directly, getting 
 - Saves content in structured JSON format into the raw data directory
 - Uses aiohttp and trafilatura for web scraping, or shallow git clones for repositories
 
-### 2. Ingest (`openground ingest`)
+### 2. Embed (`openground embed`)
 - Loads JSON files from the raw data directory
 - Splits documents into chunks with configurable overlap
 - Generates embeddings using a local model (sentence-transformers)
@@ -90,7 +90,7 @@ uv tool install openground
 # Or using pip
 pip install openground
 
-# Extract and ingest documentation from a sitemap
+# Extract and embed documentation from a sitemap
 openground add example-docs \
   --source https://docs.example.com/sitemap.xml \
   -y

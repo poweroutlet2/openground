@@ -22,7 +22,7 @@ uv tool install openground
 
 ### Index Documentation
 
-Extract and ingest documentation in one command:
+Extract and embed documentation in one command:
 
 ```bash
 openground add \
@@ -62,11 +62,11 @@ Now your AI assistant can search your documentation automatically!
           ├─────────────────────────────────────────────────────────────────────────────┤
           │                                                                             │
           │  ┌───────────────────────────────────────────────────────────────────────┐  │
-          │  │                           INGESTION PIPELINE                          │  │
+          │  │                           EMBEDDING PIPELINE                          │  │
           │  │                                                                       │  │
           │  │                                                                       |  |
           │  │   ┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐     │  │
-          │  │   │   EXTRACT   │     │   INGEST    │     │    LOCAL LANCEDB    │     │  │
+          │  │   │   EXTRACT   │     │    EMBED    │     │    LOCAL LANCEDB    │     │  │
           │  │   │  • Sitemap  │     │  • Chunking │     │  • Vector Store     │     │  │
           │  │   │    Parsing  │────>│  • Local    │────>│  • BM25 FTS Index   │     │  │
           │  │   │  • Web      │     │    Embedding│     │  • Hybrid Search    │     │  │
@@ -126,7 +126,7 @@ Here's how to index the Databricks documentation and make it available to Claude
 # 1. Install openground
 pip install openground
 
-# 2. Extract and ingest Databricks docs
+# 2. Extract and embed Databricks docs
 openground add \
   --sitemap-url https://docs.databricks.com/aws/en/sitemap.xml \
   --library databricks \

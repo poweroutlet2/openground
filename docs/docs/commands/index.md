@@ -5,7 +5,7 @@ Openground provides a comprehensive CLI for managing documentation libraries. Th
 ## Core Workflow Commands
 
 ### [add](add.md)
-Extract and ingest documentation in one step. Automatically detects if the source is a sitemap or a git repository.
+Extract and embed documentation in one step. Automatically detects if the source is a sitemap or a git repository.
 
 ```bash
 # Using a sitemap
@@ -33,11 +33,11 @@ openground extract-git --repo-url URL --docs-path docs/ --library NAME
 
 ## Core Processing Commands
 
-### [ingest](ingest.md)
+### [embed](embed.md)
 Chunk documents, generate embeddings, and load into LanceDB.
 
 ```bash
-openground ingest --library NAME
+openground embed NAME
 ```
 
 ### [query](query.md)
@@ -50,14 +50,14 @@ openground query "search terms" --library NAME
 ## Management Commands
 
 ### [ls](list-libraries.md)
-List all ingested documentation libraries.
+List all embedded documentation libraries.
 
 ```bash
 openground ls
 ```
 
 ### [list-raw-libraries](list-libraries.md#list-raw-libraries)
-List available libraries in the raw data directory that have been extracted but not yet ingested.
+List available libraries in the raw data directory that have been extracted but not yet embedded.
 
 ```bash
 openground list-raw-libraries
@@ -107,12 +107,12 @@ See [MCP Integration](../mcp-integration.md) for details.
 
 | Command | Purpose | Key Flags |
 |---------|---------|-----------|
-| `add` | Extract + ingest (auto-detect) | `--source`, `--library`, `--yes` |
+| `add` | Extract + embed (auto-detect) | `--source`, `--library`, `--yes` |
 | `extract` | Download docs from sitemap | `--sitemap-url`, `--library`, `-f` (filter) |
 | `extract-git` | Download docs from git | `--repo-url`, `--docs-path`, `--library` |
-| `ingest` | Index docs in database | `--library`, `--chunk-size`, `--batch-size` |
+| `embed` | Index docs in database | library name (positional) |
 | `query` | Search documentation | query text, `--library`, `--top-k` |
-| `ls` | List ingested libraries | None |
+| `ls` | List embedded libraries | None |
 | `list-raw-libraries` | List raw data libraries | None |
 | `rm` | Remove library | library name, `-y` (skip confirm) |
 | `config` | Manage settings | `show`, `get`, `set`, `reset`, `path` |
@@ -124,7 +124,7 @@ See [MCP Integration](../mcp-integration.md) for details.
 ### Process New Documentation
 
 ```bash
-# Extract, ingest, and verify
+# Extract, embed, and verify
 openground add -s https://docs.example.com/sitemap.xml -l example -y
 openground ls
 openground query "how to use" -l example
@@ -133,7 +133,7 @@ openground query "how to use" -l example
 ### Process from Git
 
 ```bash
-# Extract from git and ingest
+# Extract from git and embed
 openground add -s https://github.com/example/repo.git -l example -y
 ```
 
@@ -148,10 +148,10 @@ openground add -s URL -l NEW_NAME -y
 ### Change Chunking Strategy
 
 ```bash
-# Update config and re-ingest
+# Update config and re-embed
 openground config set ingestion.chunk_size 1500
 openground config set ingestion.chunk_overlap 300
-openground ingest --library NAME
+openground embed NAME
 ```
 
 ## Getting Help
@@ -168,10 +168,10 @@ openground config --help
 
 Browse the detailed documentation for each command:
 
-- [add](add.md) - Extract and ingest in one step
+- [add](add.md) - Extract and embed in one step
 - [extract](extract.md) - Detailed extraction options
 - [extract-git](extract-git.md) - Extract from git repositories
-- [ingest](ingest.md) - Chunking and embedding configuration
+- [embed](embed.md) - Chunking and embedding configuration
 - [query](query.md) - Search and filtering
 - [ls](list-libraries.md) - Listing libraries
 - [rm](remove-library.md) - Removing libraries

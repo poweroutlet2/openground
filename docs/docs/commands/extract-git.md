@@ -22,7 +22,7 @@ It performs the following steps:
 4. **Parse**: Walks the downloaded files, reading markdown and text files.
 5. **Save**: Converts each file into a JSON document and saves it to the raw data directory.
 
-The extracted JSON files can then be ingested into the database using the [`ingest`](ingest.md) command.
+The extracted JSON files can then be embedded into the database using the [`embed`](embed.md) command.
 
 ## Arguments
 
@@ -98,7 +98,7 @@ Each document becomes a JSON file with:
 ```
 
 ## See Also
-- [add](add.md) - Extract and ingest in one step (supports git)
-- [ingest](ingest.md) - Process extracted files
+- [add](add.md) - Extract and embed in one step (supports git)
+- [embed](embed.md) - Process extracted files
 - [Commands Overview](index.md) - All commands
 

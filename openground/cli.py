@@ -173,7 +173,7 @@ def add(
 
     asyncio.run(_run_extract())
 
-    # Ingest
+    # Embed
     if not output_dir.exists():
         raise typer.BadParameter(
             f"Extraction completed but data directory not found at {output_dir}."
@@ -183,14 +183,14 @@ def add(
     success(f"\nExtraction complete: {page_count} pages extracted to {output_dir}")
 
     if not yes:
-        print("\nPress Enter to continue with ingestion, or Ctrl+C to exit...")
+        print("\nPress Enter to continue with embedding, or Ctrl+C to exit...")
         try:
             input()
         except KeyboardInterrupt:
             error("\nCancelled by user.")
             raise typer.Abort()
 
-    print("\nStarting ingestion...")
+    print("\nStarting embedding...")
 
     pages = load_parsed_pages(output_dir)
     ingest_to_lancedb(pages=pages)
@@ -280,14 +280,14 @@ def extract_git(
     asyncio.run(_run())
 
 
-@app.command()
-def ingest(
+@app.command("embed")
+def embed(
     library: Optional[str] = typer.Argument(
         ...,
-        help="Library name to ingest from raw_data/{library}.",
+        help="Library name to embed from raw_data/{library}.",
     ),
 ):
-    """Chunk documents, generate embeddings, and ingest into the local db."""
+    """Chunk documents, generate embeddings, and embed into the local db."""
     from rich.console import Console
 
     console = Console()

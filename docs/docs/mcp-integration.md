@@ -21,7 +21,7 @@ pip install openground
 uv tool install openground
 ```
 
-### 2. Ingest Documentation
+### 2. Embed Documentation
 
 ```bash
 openground add example --source https://docs.example.com/sitemap.xml -y
@@ -194,7 +194,7 @@ Check that libraries are ingested:
 openground ls
 ```
 
-If empty, ingest some documentation:
+If empty, embed some documentation:
 
 ```bash
 openground add example -s URL -y

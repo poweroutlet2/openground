@@ -21,7 +21,7 @@ The `extract` command downloads and parses documentation pages from a sitemap. I
 4. Extracts main content using trafilatura
 5. Saves each page as a JSON file in the raw data directory
 
-The extracted JSON files can then be ingested into the database using the [`ingest`](ingest.md) command.
+The extracted JSON files can then be embedded into the database using the [`embed`](embed.md) command.
 
 !!! tip "Extracting from Git"
     If the documentation is hosted in a git repository and doesn't have a sitemap, use the [`extract-git`](extract-git.md) command instead.
@@ -151,7 +151,7 @@ CLI flags override config values. See [Configuration](../configuration.md) for m
 
 After extraction:
 
-1. **Ingest the data**: [`openground ingest --library NAME`](ingest.md)
+1. **Embed the data**: [`openground embed NAME`](embed.md)
 2. **Or use the combined command**: [`openground add`](add.md) to do both steps at once
 
 ## Troubleshooting
@@ -184,5 +184,5 @@ Make sure you're using the sitemap XML URL, not the main site URL. Check:
 
 ## See Also
 
--   [ingest](ingest.md) - Process extracted files
+-   [embed](embed.md) - Process extracted files
 -   [Commands Overview](index.md) - All commands

@@ -68,7 +68,7 @@ Also delete raw files at ~/.local/share/openground/raw_data/stripe-docs? [y/N]: 
 
 ### Non-Interactive Removal
 
-For scripts or when you want to keep the raw files for later re-ingestion:
+For scripts or when you want to keep the raw files for later re-embedding:
 
 ```bash
 openground rm old-library -y
@@ -77,11 +77,11 @@ openground rm old-library -y
 ## Related Commands
 
 - **List libraries**: [`openground ls`](list-libraries.md)
-- **Ingest a library**: [`openground ingest --library NAME`](ingest.md)
+- **Embed a library**: [`openground embed NAME`](embed.md)
 - **Add a new library**: [`openground add NAME --source URL`](add.md)
 
 ## See Also
 
 - [ls](list-libraries.md) - List libraries before removing
-- [ingest](ingest.md) - Re-ingest after removal
+- [embed](embed.md) - Re-embed after removal
 - [Configuration](../configuration.md) - Database settings

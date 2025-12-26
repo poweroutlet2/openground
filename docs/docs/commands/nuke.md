@@ -11,7 +11,7 @@ The `nuke` commands provide a way to completely delete all data from your Opengr
 - Removing all data before changing embedding backends or models
 
 !!! danger
-    These commands are **destructive and irreversible**. All deleted data must be re-extracted and re-ingested from the original sources.
+    These commands are **destructive and irreversible**. All deleted data must be re-extracted and re-embedded from the original sources.
 
 ## Commands
 
@@ -218,11 +218,11 @@ Use when you want to keep raw files but re-embed everything:
 - **List libraries**: [`openground ls`](list-libraries.md) - See what's in the database
 - **List raw libraries**: [`openground list-raw-libraries`](list-libraries.md#list-raw-libraries) - See what raw data exists
 - **Remove a single library**: [`openground rm NAME`](remove-library.md) - Delete one library instead of all
-- **Re-ingest after nuking**: [`openground ingest LIBRARY`](ingest.md) - Re-index raw data
+- **Re-embed after nuking**: [`openground embed LIBRARY`](embed.md) - Re-index raw data
 
 ## See Also
 
 - [Configuration](../configuration.md) - Database and storage paths
 - [rm](remove-library.md) - Remove individual libraries
-- [ingest](ingest.md) - Re-ingest after deletion
+- [embed](embed.md) - Re-embed after deletion
 

@@ -36,7 +36,7 @@ openground-mcp --help   # MCP server for AI agents
 
 Let's walk through indexing documentation from a website and querying it.
 
-### Option 1: Extract and Ingest in One Step
+### Option 1: Extract and Embed in One Step
 
 The fastest way to get started is with the combined `add` command:
 
@@ -71,7 +71,7 @@ This will:
       -y
     ```
 
-### Option 2: Extract and Ingest Separately
+### Option 2: Extract and Embed Separately
 
 For more control, you can split the process into two steps:
 
@@ -97,18 +97,18 @@ openground extract-git \
 
 These commands download and parse all documentation pages, saving them as JSON files in `~/.local/share/openground/raw_data/example-docs/`.
 
-#### Step 2: Ingest into Database
+#### Step 2: Embed into Database
 
 ```bash
-openground ingest --library example-docs
+openground embed example-docs
 ```
 
 This processes the JSON files and loads them into the vector database at `~/.local/share/openground/lancedb/`.
 
 !!! note "Why separate steps?"
-    Separating extraction and ingestion lets you:
+    Separating extraction and embedding lets you:
     
-    - Extract once, re-ingest with different chunking strategies
+    - Extract once, re-embed with different chunking strategies
     - Review extracted content before indexing
     - Keep raw data for backup or analysis
 
@@ -210,6 +210,7 @@ First-time ingestion downloads the embedding model (`sentence-transformers/all-M
 You can adjust batch size to trade off speed vs memory:
 
 ```bash
-openground ingest --library NAME --batch-size 16  # Smaller batches, less memory
+openground config set ingestion.batch_size 16
+openground embed NAME  # Smaller batches, less memory
 ```
 

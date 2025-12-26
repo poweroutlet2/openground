@@ -127,7 +127,7 @@ openground config set extraction.concurrency_limit 10
 **Batch Size**: Affects memory usage during ingestion. Lower values use less memory but take longer.
 
 !!! warning "Changing Embedding Models"
-    If you change the embedding model or dimensions, you must re-ingest all your libraries. The model downloads on first use and is cached locally.
+    If you change the embedding model or dimensions, you must re-embed all your libraries. The model downloads on first use and is cached locally.
 
 #### Query Settings
 

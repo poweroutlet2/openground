@@ -1,6 +1,6 @@
 # add
 
-Extract documentation pages from a source and ingest them into the database in one step.
+Extract documentation pages from a source and embed them into the database in one step.
 
 ## Usage
 
@@ -20,7 +20,7 @@ openground add example-docs \
 
 ## Description
 
-The `add` command combines [`extract`](extract.md) (or `extract-git`) and [`ingest`](ingest.md) into a single operation. It intelligently detects the source type (sitemap or git) based on the URL provided to `--source`, or looks up the configuration in the built-in `sources.json` file.
+The `add` command combines [`extract`](extract.md) (or `extract-git`) and [`embed`](embed.md) into a single operation. It intelligently detects the source type (sitemap or git) based on the URL provided to `--source`, or looks up the configuration in the built-in `sources.json` file.
 
 If a library is found in `sources.json`, Openground automatically uses the predefined source URL, filter keywords, or documentation paths.
 
@@ -37,7 +37,7 @@ If a library is found in `sources.json`, Openground automatically uses the prede
 3. Walks the documentation directory and reads markdown/text files.
 4. Saves each file as a JSON document in the raw data directory.
 
-### Ingestion (Shared)
+### Embedding (Shared)
 1. Loads the JSON files and splits them into chunks.
 2. Generates embeddings using a local sentence-transformer model.
 3. Stores vectors and creates a BM25 full-text search index in LanceDB.
@@ -45,11 +45,11 @@ If a library is found in `sources.json`, Openground automatically uses the prede
 This is the fastest way to get documentation indexed and ready for querying.
 
 !!! tip "When to use `add` vs separate commands"
-    Use `add` when you want to extract and ingest in one go. Use separate [`extract`](extract.md) and [`ingest`](ingest.md) commands when you want to:
-    - Extract once, then re-ingest with different chunking strategies.
+    Use `add` when you want to extract and embed in one go. Use separate [`extract`](extract.md) and [`embed`](embed.md) commands when you want to:
+    - Extract once, then re-embed with different chunking strategies.
     - Review extracted content before indexing.
     - Keep raw data for backup or analysis.
-    - Extract from multiple sources before ingesting together.
+    - Extract from multiple sources before embedding together.
 
 ## Arguments
 
@@ -101,9 +101,9 @@ Skip the confirmation prompt between extraction and ingestion.
 openground add -s URL -l NAME -y
 ```
 
-## Ingestion Parameters
+## Embedding Parameters
 
-The `add` command uses configuration values for ingestion parameters. These can be set in your config file:
+The `add` command uses configuration values for embedding parameters. These can be set in your config file:
 
 ```bash
 # Set chunking parameters
@@ -119,7 +119,7 @@ openground config set ingestion.embedding_dimensions 384
 See [Configuration](../configuration.md) for all available settings.
 
 !!! note
-    Unlike the separate `ingest` command, `add` does not support CLI flags for chunking parameters. If you need custom chunking for a specific run, set the values in your config file before running `add`, or use separate `extract` and `ingest` commands.
+    Unlike the separate `embed` command, `add` does not support CLI flags for chunking parameters. If you need custom chunking for a specific run, set the values in your config file before running `add`, or use separate `extract` and `embed` commands.
 
 ## Examples
 
@@ -146,6 +146,6 @@ openground add example-docs -s https://github.com/example/repo.git -d documentat
 ## See Also
 - [extract](extract.md) - Extract documentation separately
 - [extract-git](extract-git.md) - Extract from git repo separately
-- [ingest](ingest.md) - Ingest extracted files separately
+- [embed](embed.md) - Embed extracted files separately
 - [query](query.md) - Search your documentation
 - [Configuration](../configuration.md) - Customize settings

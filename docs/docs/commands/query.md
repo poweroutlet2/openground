@@ -223,7 +223,7 @@ If you need programmatic access, consider using the Python API directly or the M
 ### Poor Quality Results
 
 - Try more specific queries
-- Adjust chunking parameters and re-ingest (see [ingest](ingest.md))
+- Adjust chunking parameters and re-embed (see [embed](embed.md))
 - Consider using a better embedding model (see [Configuration](../configuration.md#embedding-model-settings))
 
 ### Results Missing Expected Content
@@ -234,7 +234,7 @@ If you need programmatic access, consider using the Python API directly or the M
 
 ## See Also
 
-- [ingest](ingest.md) - Ingest documentation before querying
+- [embed](embed.md) - Embed documentation before querying
 - [list-libraries](list-libraries.md) - See available libraries
 - [Configuration](../configuration.md) - Customize search settings
 - [MCP Integration](../mcp-integration.md) - Query from AI agents

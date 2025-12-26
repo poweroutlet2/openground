@@ -131,7 +131,7 @@ def _validate_table_metadata(table: Table, backend: str, model: str) -> None:
             f"  Model: {model}\n\n"
             f"To resolve this, you can:\n"
             f"  1. Change your config to match the table's original settings\n"
-            f"  2. Run `openground nuke embeddings` and then `openground ingest`\n"
+            f"  2. Run `openground nuke embeddings` and then `openground embed`\n"
         )
 
 

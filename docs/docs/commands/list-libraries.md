@@ -2,7 +2,7 @@
 
 List documentation libraries managed by Openground.
 
-## Ingested Libraries
+## Embedded Libraries
 
 List libraries that have been processed and are stored in the database, ready for querying.
 
@@ -33,7 +33,7 @@ stripe-docs
 
 ## List Raw Libraries
 
-List libraries that have been extracted but not yet ingested into the database.
+List libraries that have been extracted but not yet embedded into the database.
 
 ### Usage
 
@@ -47,7 +47,7 @@ The `list-raw-libraries` command scans your raw data directory and lists the nam
 
 This is useful if you want to:
 - See what you've already downloaded but haven't indexed yet.
-- Re-ingest a library with different settings.
+- Re-embed a library with different settings.
 
 ### Examples
 
@@ -67,11 +67,11 @@ Available libraries in raw_data:
 
 - **Query a library**: [`openground query "search" --library NAME`](query.md)
 - **Remove a library**: [`openground rm NAME`](remove-library.md)
-- **Ingest a raw library**: [`openground ingest --library NAME`](ingest.md)
+- **Embed a raw library**: [`openground embed NAME`](embed.md)
 - **Add a new library**: [`openground add NAME --source URL`](add.md)
 
 ## See Also
 
 - [rm](remove-library.md) - Remove a library from the database
-- [query](query.md) - Search ingested libraries
-- [ingest](ingest.md) - Index raw documentation
+- [query](query.md) - Search embedded libraries
+- [embed](embed.md) - Index raw documentation

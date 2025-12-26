@@ -6,12 +6,13 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Configuration: configuration.md
+  - Embedding Backends: embedding-backends.md
   - Commands:
     - Overview: commands/index.md
     - add: commands/add.md
     - extract: commands/extract.md
     - extract-git: commands/extract-git.md
-    - ingest: commands/ingest.md
+    - embed: commands/embed.md
     - query: commands/query.md
     - ls: commands/list-libraries.md
     - rm: commands/remove-library.md
