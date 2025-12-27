@@ -1,6 +1,5 @@
 from collections.abc import Iterable
 
-from rich.console import Console
 from tqdm import tqdm
 
 from openground.config import get_effective_config

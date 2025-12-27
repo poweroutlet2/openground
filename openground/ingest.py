@@ -224,4 +224,4 @@ def ingest_to_lancedb(
     except Exception as exc:  # best-effort; index may already exist
         print(f"FTS index creation skipped: {exc}")
 
-    success(f"Ingested {len(all_records)} chunks into table '{table_name}'.")
+    success(f"Saved {len(all_records)} chunks into lancedb table Lancedb.")

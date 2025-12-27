@@ -60,16 +60,16 @@ This will:
 4. Store everything in LanceDB for searching
 
 !!! tip "Source Autodetection"
-    The `add` command automatically detects if the source is a sitemap (ends in `.xml` or contains `sitemap`) or a git repository (ends in `.git` or hosted on GitHub/GitLab).
+The `add` command automatically detects if the source is a sitemap (ends in `.xml` or contains `sitemap`) or a git repository (ends in `.git` or hosted on GitHub/GitLab).
 
 !!! tip "Filtering URLs (Sitemap only)"
-    Add `-f` flags to only extract URLs containing specific keywords:
-    ```bash
+Add `-f` flags to only extract URLs containing specific keywords:
+`bash
     openground add databricks \
       --source https://docs.databricks.com/aws/en/sitemap.xml \
       -f docs -f guide \
       -y
-    ```
+    `
 
 ### Option 2: Extract and Embed Separately
 
@@ -106,8 +106,8 @@ openground embed example-docs
 This processes the JSON files and loads them into the vector database at `~/.local/share/openground/lancedb/`.
 
 !!! note "Why separate steps?"
-    Separating extraction and embedding lets you:
-    
+Separating extraction and embedding lets you:
+
     - Extract once, re-embed with different chunking strategies
     - Review extracted content before indexing
     - Keep raw data for backup or analysis
@@ -128,13 +128,13 @@ Results for: "how to authenticate"
 1. Authentication Guide (Score: 0.85)
    Library: example-docs
    URL: https://docs.example.com/guides/authentication
-   
+
    To authenticate with the API, you need to obtain an API key from your dashboard...
 
 2. API Keys (Score: 0.78)
    Library: example-docs
    URL: https://docs.example.com/api/keys
-   
+
    API keys are used to authenticate requests to the API. You can create keys in the...
 ```
 
@@ -182,9 +182,9 @@ For more details, see the [MCP Integration](mcp-integration.md) guide.
 
 ## Next Steps
 
-- [Configuration](configuration.md) - Customize chunking, embedding models, and more
-- [Commands](commands/index.md) - Explore all available commands
-- [MCP Integration](mcp-integration.md) - Connect to AI agents
+-   [Configuration](configuration.md) - Customize chunking, embedding models, and more
+-   [Commands](commands/index.md) - Explore all available commands
+-   [MCP Integration](mcp-integration.md) - Connect to AI agents
 
 ## Troubleshooting
 
@@ -192,16 +192,16 @@ For more details, see the [MCP Integration](mcp-integration.md) guide.
 
 If `openground` is not found after installation:
 
-- **pip users**: Ensure your Python scripts directory is in PATH
-- **uv users**: Ensure `~/.local/bin` is in PATH
+-   **pip users**: Ensure your Python scripts directory is in PATH
+-   **uv users**: Ensure `~/.local/bin` is in PATH
 
 ### Extraction Fails
 
 If extraction times out or fails:
 
-- Try reducing `--concurrency-limit`: `openground extract -s URL -l NAME -c 10`
-- Check that the sitemap URL is valid and accessible
-- Some sites may block automated scraping
+-   Try reducing `--concurrency-limit`: `openground extract -s URL -l NAME -c 10`
+-   Check that the sitemap URL is valid and accessible
+-   Some sites may block automated scraping
 
 ### Slow Ingestion
 
@@ -213,4 +213,3 @@ You can adjust batch size to trade off speed vs memory:
 openground config set ingestion.batch_size 16
 openground embed NAME  # Smaller batches, less memory
 ```
-

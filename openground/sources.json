@@ -111,5 +111,12 @@
         "docs_paths": [
             "docs"
         ]
+    },
+    "webcontainer": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/stackblitz/webcontainer-docs.git",
+        "docs_paths": [
+            "docs"
+        ]
     }
 }
