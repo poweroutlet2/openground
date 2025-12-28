@@ -52,6 +52,7 @@ Openground is a RAG pipeline tool with CLI and MCP server components.
 ### Development
 
 ```bash
+uv run python ...             # Run commands with venv
 uv run ruff check .    # Linting
 uv run ty check .      # Type checking
 ```

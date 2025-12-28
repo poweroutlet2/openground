@@ -27,7 +27,8 @@ from openground.extract.source import get_library_config
 
 
 app = typer.Typer(
-    help="Openground is a CLI for storing and querying documentation in a local vector database."
+    help="Openground is a CLI for storing and querying documentation in a local vector database.",
+    no_args_is_help=True,
 )
 
 
@@ -53,6 +54,19 @@ def ensure_config_exists(ctx: typer.Context):
     # Notify user if we just created it
     if not file_existed and config_path.exists():
         success(f"Config file created at {config_path}\n")
+
+
+@app.command("version")
+def version_cmd():
+    """Display the openground version."""
+    try:
+        from importlib.metadata import version
+
+        v = version("openground")
+        print(v)
+    except Exception:
+        # Fallback if package metadata is not available
+        print("unknown")
 
 
 @app.command("add")
