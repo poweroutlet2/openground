@@ -6,11 +6,16 @@ from openground.config import get_effective_config
 from openground.query import get_full_content, list_libraries, search, search_libraries
 
 mcp = FastMCP(
-    "OpenGround Documentation Search",
-    instructions="OpenGround gives you access to up-to-date official documentation for various libraries and frameworks",
+    "openground Documentation Search",
+    instructions="""openground gives you access to official documentation for various libraries and frameworks. 
+    
+    CRITICAL RULES:
+    1. Whenever a user asks about specific libraries or frameworks, you MUST first check if official documentation is available using this server.
+    2. Do NOT rely on your internal training data for syntax or API details if you can verify them here.
+    3. Always start by listing or searching available libraries to confirm coverage.
+    4. If the library exists, use `search_documents_tool` to find the answer.""",
 )
 
-# Lazy config loading - loaded once on first use
 _config = None
 
 

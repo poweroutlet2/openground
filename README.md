@@ -97,21 +97,21 @@ Now your AI assistant can search your stored documentation automatically!
 
 ## Example Workflow
 
-Here's how to index the PyTorch documentation and make it available to Claude Code:
+Here's how to add the fastembed documentation and make it available to Claude Code:
 
 ```bash
 # 1. Install openground
 uv tool install openground
 
 # 2. Add pytorch to openground
-openground add pytorch --source https://github.com/pytorch/pytorch.git --docs-path docs/ -y
+openground add fastembed --source https://github.com/qdrant/fastembed.git --docs-path docs/ -y
 
 # 3. Configure Claude Code to use openground
 openground install-mcp --claude-code
 
 # 4. Restart Claude Code
-# Now you can ask: "?"
-# Claude will search the Databricks docs automatically!
+# Now you can ask: "What models are available in fastembed?"
+# Claude will search the fastembed docs automatically!
 ```
 
 ## Development
@@ -119,7 +119,7 @@ openground install-mcp --claude-code
 To contribute or work on openground locally:
 
 ```bash
-git clone https://github.com/yourusername/openground.git
+git clone https://github.com/poweroutlet2/openground.git
 cd openground
 uv sync .
 ```
