@@ -1,6 +1,6 @@
 [project]
 name = "openground"
-version = "0.1.0"
+version = "0.2.3"
 description = "Ingest official documentation into a local vector database and expose it via MCP for AI coding agents"
 readme = "README.md"
 license = "MIT"
@@ -46,11 +46,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
-    "mkdocs>=1.6.1",
-    "ruff>=0.14.8",
-    "ty>=0.0.7",
-]
+dev = ["mkdocs>=1.6.1", "ruff>=0.14.8", "ty>=0.0.7"]
 
 [project.urls]
 Homepage = "https://github.com/poweroutlet2/openground"
@@ -68,6 +64,20 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["openground"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "openground/**/*.py",
+    "openground/**/*.json",
+    "pyproject.toml",
+    "README.md",
+    "LICENSE",
+]
+
 [tool.hatch.build]
 include = ["openground/sources.json"]
 
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true

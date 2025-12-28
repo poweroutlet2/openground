@@ -2191,7 +2191,7 @@ wheels = [
 
 [[package]]
 name = "openground"
-version = "0.1.0"
+version = "0.2.2"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
