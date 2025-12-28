@@ -2,24 +2,65 @@
 alwaysApply: true
 ---
 
-This project is for openground. openground is a tool for extracting framework and library documentation from official sources and letting AI coding agents query it.
+# Openground Project Configuration
 
-1. RAG documentation ingestion pipeline
-2. MCP server
+## Project Overview
 
-It is written in python and uses tooling such as:
+Openground is a tool for extracting framework and library documentation from official sources (sitemaps and git repos) and making it queryable by AI coding agents. It consists of:
 
--   uv for package management
--   ruff for linting `uv run ruff check .`
--   ty for type checking `uv run ty check .`
+1. **RAG documentation ingestion pipeline**: Extracts documentation from sources (sitemap.xml or git repos), stores pages as structured JSON, then chunks and embeds them into a local LanceDB database.
+2. **MCP server**: Exposes tools for AI agents to perform hybrid semantic and BM25 search over the documentation database.
 
-The philosophy of openground revolves around simplicity of implementation for maintainers, and ease of use and elegance for users. We want to make users say "wow, it just works." This is of upmost importance.
+The philosophy emphasizes simplicity for maintainers and ease of use for users—aiming to make users say "wow, it just works."
 
-1. RAG documentation ingestion pipeline
+## Tech Stack
 
--   Extract: Extracts documentation content from sources like sitemap.xml and git repos and stores pages in structured json format in a raw data directory
--   Ingest: Chunk, embed, and save documents into lancedb
+-   **Language**: Python 3.10+
+-   **Package Management**: uv
+-   **Key Libraries**: aiohttp, pydantic, trafilatura, typer, lancedb, sentence-transformers, fastembed, torch, langchain-text-splitters, fastmcp, pandas, rich
+-   **Development Tools**: ruff (linting), ty (type checking)
 
-2. MCP Server
+## Coding Style
 
--   Exposes tools to query the lancedb
+-   **Paradigm**: Functional programming preferred
+-   **Type Hints**: Required for all functions
+-   **Error Handling**: Errors must provide clear and actionable logging. Fail fast with actionable error messages.
+-   **Documentation**:
+    -   Concise but informative docstrings for functions
+    -   Prefer self-commenting code
+    -   Inline comments only for particularly confusing lines
+-   **Comments**: Only touch existing comments if modifying the related code
+
+## Directory Structure
+
+Openground is a RAG pipeline tool with CLI and MCP server components.
+
+-   **Main modules**: `cli.py`, `config.py`, `ingest.py`, `query.py`, `server.py`, `embeddings.py`, `console.py`
+-   **extract/ subdirectory**: `git.py`, `source.py`, `common.py`, `sitemap.py`
+-   **Configuration**: Managed via JSON config file (see `config.py`)
+-   **Pipeline**: extract → embed → query (hybrid semantic + BM25 search in lancedb)
+
+## Behavioral Rules
+
+-   **Explanation**: Explain "why" before coding
+-   **File Size**: No file size preference
+-   **Comments**: Only modify existing comments when touching related code
+-   **Errors**: Fail fast with actionable error messages
+
+## Project Commands
+
+### Development
+
+```bash
+uv run ruff check .    # Linting
+uv run ty check .      # Type checking
+```
+
+### CLI Commands
+
+Primary commands (see `cli.py` for complete list):
+
+-   `openground add` - Extract and ingest documentation from a source
+-   `openground install-mcp` - Install MCP server configuration
+-   `openground config` - Manage configuration (show, set, get, reset)
+-   `openground nuke` - Delete all data (raw_data and/or embeddings)

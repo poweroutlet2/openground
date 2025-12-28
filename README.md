@@ -2,44 +2,77 @@
 
 [![PyPI version](https://badge.fury.io/py/openground.svg)](https://badge.fury.io/py/openground)
 
-Openground is a system for managing documentation in an agent-friendly manner. It extracts and stores docs from websites, then exposes them to AI coding agents via MCP for querying with hybrid BM25 full-text search and vector similarity search.
+Openground is a system for managing your own local RAG pipeline for documentation and allowing your coding agents to query it via MCP. It extracts and embeds contents from git repos and websites, and allows agents to quer it using hybrid BM25 full-text search and vector similarity search.
 
-**[📚 Full Documentation](docs/)**
+## Architecture
+
+````
+    ┌───────────────────────────────────────────────────────────┐
+    │                      OPENGROUND                           │
+    └───────────────────────────────────────────────────────────┘
+
+       SOURCE                  PROCESS             STORAGE/OUTPUT
+
+    ┌──────────┐      ┌───────────┐   ┌──────────┐   ┌──────────┐
+    │ git repo │─────>│  Extract  │──>│  Chunk   │──>│ LanceDB  │
+    |   -or-   |      │ (scrape/  │   │   Text   │   │ (vector  │
+    │ sitemap  │      │  clone)   │   └──────────┘   │  +BM25)  │
+    └──────────┘      └───────────┘        │         └────┬─────┘
+                                           ▼              │
+                                    ┌───────────┐         │
+                                    │   Local   │─────────┘
+                                    │ Embedding │         │
+                                    │   Model   │         ▼
+                                    └───────────┘  ┌─────────────┐
+                                                   │ CLI / MCP   │
+                                                   │   (query)   │
+                                                   └─────────────┘
+```
 
 ## Quick Start
 
 ### Installation
 
-```bash
-pip install openground
-```
-
-Or with [uv](https://docs.astral.sh/uv/):
+Recommended to install with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv tool install openground
 ```
 
-### Index Documentation
-
-Extract and embed documentation in one command:
+or
 
 ```bash
-openground add \
-  --sitemap-url https://docs.example.com/sitemap.xml \
-  --library example-docs \
+pip install openground
+```
+
+### Index Documentation
+
+Openground can source documentation from git repos or sitemaps.
+
+To add documentation from a git repo to openground, run:
+
+```bash
+openground add library-name \
+  --source https://github.com/example/example.git \
+  --docs-path docs/ \
   -y
 ```
 
-### Query from CLI
+To add documentation from a sitemap to openground, run:
 
 ```bash
-openground query "how to authenticate" --library example-docs
+openground add library-name \
+  --source https://docs.example.com/sitemap.xml \
+  --filter-keyword docs/ \
+  --filter-keyword blog/ \
+  -y
 ```
+
+This will download the docs, embed them, and store them into lancedb. All locally.
 
 ### Use with AI Agents
 
-Configure your AI coding assistant to use openground via MCP:
+To install the MCP server:
 
 ```bash
 # For Cursor
@@ -50,96 +83,31 @@ openground install-mcp --claude-code
 
 # For OpenCode
 openground install-mcp --opencode
+
+# For any other agent
+openground install-mcp
 ```
 
-Now your AI assistant can search your documentation automatically!
-
-## Architecture
-
-```
-          ┌─────────────────────────────────────────────────────────────────────────────┐
-          │                              OPENGROUND                                     │
-          ├─────────────────────────────────────────────────────────────────────────────┤
-          │                                                                             │
-          │  ┌───────────────────────────────────────────────────────────────────────┐  │
-          │  │                           EMBEDDING PIPELINE                          │  │
-          │  │                                                                       │  │
-          │  │                                                                       |  |
-          │  │   ┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐     │  │
-          │  │   │   EXTRACT   │     │    EMBED    │     │    LOCAL LANCEDB    │     │  │
-          │  │   │  • Sitemap  │     │  • Chunking │     │  • Vector Store     │     │  │
-          │  │   │    Parsing  │────>│  • Local    │────>│  • BM25 FTS Index   │     │  │
-          │  │   │  • Web      │     │    Embedding│     │  • Hybrid Search    │     │  │
-          │  │   │    Scraping │     │    Model    │     │                     │     │  │
-          │  │   └─────────────┘     └─────────────┘     └──────────┬──────────┘     │  │
-          │  │         │                    ^                       │                │  │
-          │  │         ▼                    |                       │                │  │
-          │  │   ┌─────────────┐            |                       │                │  │
-          │  │   │     JSON    │ ───────────┘                       │                │  │
-          │  │   │             │                                    │                │  │
-          │  │   └─────────────┘                                    │                │  │
-          │  └──────────────────────────────────────────────────────│────────────────┘  │
-          │                                                         │                   │
-          │  ┌───────────────────────────────────────────────────── ▼ ───────────────┐  │
-          │  │                        QUERY INTERFACE                                │  │
-          │  │                                                                       │  │
-          │  │   ┌─────────────────────┐      ┌─────────────────────────────────┐    │  │
-          │  │   │    CLI COMMANDS     │      │         FASTMCP SERVER          │    │  │
-          │  │   │                     │      │                                 │    │  │
-          │  │   │  openground query   │      │  • search_documents_tool        │    │  │
-          │  │   │  openground ls      │      │  • list_libraries_tool          │    │  │
-          │  │   │  openground rm      │      │  • get_full_content_tool        │    │  │
-          │  │   │                     │      │                                 │    │  │
-          │  │   └─────────────────────┘      └─────────────────────────────────┘    │  │
-          │  │            │                                 │                        │  │
-          │  └────────────│─────────────────────────────────│────────────────────────┘  │
-          │               │                                 │                           │
-          └───────────────│─────────────────────────────────│───────────────────────────┘
-                          │                                 │
-                          ▼                                 ▼
-                   ┌────────────┐                  ┌────────────────┐
-                   │    USER    │                  │   AI AGENTS    │
-                   │  Terminal  │                  │  Cursor/Claude │
-                   └────────────┘                  └────────────────┘
-```
-
-## Documentation
-
--   **[Getting Started](docs/docs/getting-started.md)** - Installation and quick start guide
--   **[Configuration](docs/docs/configuration.md)** - Customize chunking, embedding models, and more
--   **[CLI Commands](docs/docs/commands/)** - Complete command reference
--   **[MCP Integration](docs/docs/mcp-integration.md)** - Connect to AI coding assistants
-
-## Features
-
--   **Extract** documentation from any website with a sitemap
--   **Hybrid search** combining semantic similarity (vector embeddings) and BM25 keyword matching
--   **Local-first** - all processing happens on your machine, no API calls
--   **MCP server** for seamless integration with AI coding assistants
--   **Configurable** chunking, embedding models, and search parameters
+Now your AI assistant can search your stored documentation automatically!
 
 ## Example Workflow
 
-Here's how to index the Databricks documentation and make it available to Claude Code:
+Here's how to index the PyTorch documentation and make it available to Claude Code:
 
 ```bash
 # 1. Install openground
-pip install openground
+uv tool install openground
 
-# 2. Extract and embed Databricks docs
-openground add \
-  --sitemap-url https://docs.databricks.com/aws/en/sitemap.xml \
-  --library databricks \
-  -f docs -f documentation \
-  -y
+# 2. Add pytorch to openground
+openground add pytorch --source https://github.com/pytorch/pytorch.git --docs-path docs/ -y
 
 # 3. Configure Claude Code to use openground
 openground install-mcp --claude-code
 
 # 4. Restart Claude Code
-# Now you can ask: "How do I create a Delta table in Databricks?"
+# Now you can ask: "?"
 # Claude will search the Databricks docs automatically!
-```
+````
 
 ## Development
 
@@ -148,7 +116,7 @@ To contribute or work on openground locally:
 ```bash
 git clone https://github.com/yourusername/openground.git
 cd openground
-uv pip install -e .
+uv sync .
 ```
 
 ## License
