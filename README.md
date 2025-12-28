@@ -2,31 +2,36 @@
 
 [![PyPI version](https://badge.fury.io/py/openground.svg)](https://badge.fury.io/py/openground)
 
-Openground is a system for managing your own local RAG pipeline for documentation and allowing your coding agents to query it via MCP. It extracts and embeds contents from git repos and websites, and allows agents to quer it using hybrid BM25 full-text search and vector similarity search.
+tldr: openground lets you give controlled access to documentation to AI agents. Everything happens on-device.
+
+openground is an on-device RAG system that extracts documentation from git repos and sitemaps, embeds it for semantic search, and exposes it to AI agents via MCP. It uses a local embedding model, and local lancedb for storing embeddings and for hybrid vector similarity and BM25 full-text search.
 
 ## Architecture
 
-````
-    ┌───────────────────────────────────────────────────────────┐
-    │                      OPENGROUND                           │
-    └───────────────────────────────────────────────────────────┘
-
-       SOURCE                  PROCESS             STORAGE/OUTPUT
-
-    ┌──────────┐      ┌───────────┐   ┌──────────┐   ┌──────────┐
-    │ git repo │─────>│  Extract  │──>│  Chunk   │──>│ LanceDB  │
-    |   -or-   |      │ (scrape/  │   │   Text   │   │ (vector  │
-    │ sitemap  │      │  clone)   │   └──────────┘   │  +BM25)  │
-    └──────────┘      └───────────┘        │         └────┬─────┘
-                                           ▼              │
-                                    ┌───────────┐         │
-                                    │   Local   │─────────┘
-                                    │ Embedding │         │
-                                    │   Model   │         ▼
-                                    └───────────┘  ┌─────────────┐
-                                                   │ CLI / MCP   │
-                                                   │   (query)   │
-                                                   └─────────────┘
+```
+      ┌─────────────────────────────────────────────────────────────────────┐
+      │                           OPENGROUND                                │
+      ├─────────────────────────────────────────────────────────────────────┤
+      │                                                                     │
+      │       SOURCE                  PROCESS              STORAGE/CLIENT   │
+      │                                                                     │
+      │    ┌──────────┐      ┌───────────┐   ┌──────────┐   ┌──────────┐    │
+      │    │ git repo ├─────>│  Extract  ├──>│  Chunk   ├──>│ LanceDB  │    │
+      │    |   -or-   |      │ (raw_data)│   │   Text   │   │ (vector  │    │
+      │    │ sitemap  │      └───────────┘   └──────────┘   │  +BM25)  │    │
+      │    └──────────┘                           │         └────┬─────┘    │
+      │                                           ▼              │          │
+      │                                    ┌───────────┐         │          │
+      │                                    │   Local   |<────────┘          │
+      │                                    │ Embedding │         │          │
+      │                                    │   Model   │         ▼          │
+      │                                    └───────────┘  ┌─────────────┐   │
+      │                                                   │ CLI / MCP   │   │
+      │                                                   │  (hybrid    │   │
+      |                                                   |   search)   |   |
+      │                                                   └─────────────┘   │
+      │                                                                     │
+      └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -45,7 +50,7 @@ or
 pip install openground
 ```
 
-### Index Documentation
+### Add Documentation
 
 Openground can source documentation from git repos or sitemaps.
 
@@ -107,7 +112,7 @@ openground install-mcp --claude-code
 # 4. Restart Claude Code
 # Now you can ask: "?"
 # Claude will search the Databricks docs automatically!
-````
+```
 
 ## Development
 
