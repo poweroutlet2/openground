@@ -45,7 +45,8 @@ DEFAULT_DB_PATH = get_data_home() / "lancedb"
 DEFAULT_TABLE_NAME = "documents"
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_EMBEDDING_DIMENSIONS = 384
-DEFAULT_EMBEDDING_BACKEND = "fastembed"
+# fa
+DEFAULT_EMBEDDING_BACKEND = "sentence-transformers" 
 
 # Default values for ingestion parameters
 DEFAULT_BATCH_SIZE = 32
