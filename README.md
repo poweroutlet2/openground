@@ -1,6 +1,6 @@
 # openground
 
-[![PyPI version](https://pypi.org/project/openground)](https://img.shields.io/pypi/v/openground.svg)
+[![PyPI version](https://img.shields.io/pypi/v/openground?logo=pypi)](https://pypi.org/project/openground/)
 
 tldr: openground lets you give controlled access to documentation to AI agents. Everything happens on-device.
 
