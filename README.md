@@ -103,10 +103,10 @@ Here's how to add the fastembed documentation and make it available to Claude Co
 # 1. Install openground
 uv tool install openground
 
-# 2. Add pytorch to openground
+# 2. Add fastembed to openground
 openground add fastembed --source https://github.com/qdrant/fastembed.git --docs-path docs/ -y
 
-# 3. Configure Claude Code to use openground
+# 3. Configure Claude Code to use openground MCP
 openground install-mcp --claude-code
 
 # 4. Restart Claude Code
