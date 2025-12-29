@@ -11,7 +11,7 @@ Openground is a tool for extracting framework and library documentation from off
 1. **RAG documentation ingestion pipeline**: Extracts documentation from sources (sitemap.xml or git repos), stores pages as structured JSON, then chunks and embeds them into a local LanceDB database.
 2. **MCP server**: Exposes tools for AI agents to perform hybrid semantic and BM25 search over the documentation database.
 
-The philosophy emphasizes simplicity for maintainers and ease of use for users—aiming to make users say "wow, it just works."
+The philosophy mandates simplicity of implementation for maintainers and ease of use for users.
 
 ## Tech Stack
 
