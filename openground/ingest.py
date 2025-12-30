@@ -44,8 +44,8 @@ def chunk_document(
     page: ParsedPage,
 ) -> list[dict]:
     config = get_effective_config()
-    chunk_size = config["ingestion"]["chunk_size"]
-    chunk_overlap = config["ingestion"]["chunk_overlap"]
+    chunk_size = config["embeddings"]["chunk_size"]
+    chunk_overlap = config["embeddings"]["chunk_overlap"]
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size, chunk_overlap=chunk_overlap
@@ -180,9 +180,9 @@ def ingest_to_lancedb(
     config = get_effective_config()
     db_path = Path(config["db_path"]).expanduser()
     table_name = config["table_name"]
-    embedding_dimensions = config["ingestion"]["embedding_dimensions"]
-    embedding_backend = config["ingestion"]["embedding_backend"]
-    embedding_model = config["ingestion"]["embedding_model"]
+    embedding_dimensions = config["embeddings"]["embedding_dimensions"]
+    embedding_backend = config["embeddings"]["embedding_backend"]
+    embedding_model = config["embeddings"]["embedding_model"]
 
     db = lancedb.connect(str(db_path))
     table = ensure_table(

@@ -40,7 +40,7 @@ def get_library_raw_data_dir(library_name: str) -> Path:
     return raw_data_dir_base / library_name.lower()
 
 
-# Ingestion / query defaults
+# Embeddings / query defaults
 DEFAULT_DB_PATH = get_data_home() / "lancedb"
 DEFAULT_TABLE_NAME = "documents"
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
@@ -48,7 +48,7 @@ DEFAULT_EMBEDDING_DIMENSIONS = 384
 # fastembed or sentence-transformers
 DEFAULT_EMBEDDING_BACKEND = "sentence-transformers" 
 
-# Default values for ingestion parameters
+# Default values for embeddings parameters
 DEFAULT_BATCH_SIZE = 32
 DEFAULT_CHUNK_SIZE = 800
 DEFAULT_CHUNK_OVERLAP = 200
@@ -138,7 +138,7 @@ def get_default_config() -> dict[str, Any]:
         "extraction": {
             "concurrency_limit": CONCURRENCY_LIMIT,
         },
-        "ingestion": {
+        "embeddings": {
             "batch_size": DEFAULT_BATCH_SIZE,
             "chunk_size": DEFAULT_CHUNK_SIZE,
             "chunk_overlap": DEFAULT_CHUNK_OVERLAP,
@@ -171,12 +171,12 @@ def _merge_with_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
                 "Config key 'extraction' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
             )
         merged["extraction"].update(user_config["extraction"])
-    if "ingestion" in user_config:
-        if not isinstance(user_config["ingestion"], dict):
+    if "embeddings" in user_config:
+        if not isinstance(user_config["embeddings"], dict):
             raise ValueError(
-                "Config key 'ingestion' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
+                "Config key 'embeddings' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
             )
-        merged["ingestion"].update(user_config["ingestion"])
+        merged["embeddings"].update(user_config["embeddings"])
     if "query" in user_config:
         if not isinstance(user_config["query"], dict):
             raise ValueError(

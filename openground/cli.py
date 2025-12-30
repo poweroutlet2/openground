@@ -838,7 +838,7 @@ def config_show(
 @config_app.command("set")
 def config_set(
     key: str = typer.Argument(
-        ..., help="Config key (use dot notation like 'ingestion.chunk_size')"
+        ..., help="Config key (use dot notation like 'embeddings.chunk_size')"
     ),
     value: str = typer.Argument(..., help="Value to set"),
 ):
@@ -860,6 +860,14 @@ def config_set(
         parsed_value = json.loads(value)
     except json.JSONDecodeError:
         parsed_value = value
+
+    # Validate embedding_backend if setting embeddings.embedding_backend
+    if key == "embeddings.embedding_backend":
+        if parsed_value not in ("sentence-transformers", "fastembed"):
+            error(
+                f"Error: Invalid value for 'embeddings.embedding_backend': '{parsed_value}'. Must be 'sentence-transformers' or 'fastembed'."
+            )
+            raise typer.Exit(1)
 
     # Navigate to the right place in the config (supports arbitrary depth).
     if not parts or any(not p for p in parts):
@@ -891,7 +899,7 @@ def config_set(
 @config_app.command("get")
 def config_get(
     key: str = typer.Argument(
-        ..., help="Config key (use dot notation like 'ingestion.chunk_size')"
+        ..., help="Config key (use dot notation like 'embeddings.chunk_size')"
     ),
 ):
     """Get a configuration value."""

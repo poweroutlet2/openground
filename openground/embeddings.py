@@ -30,8 +30,8 @@ def _generate_embeddings_sentence_transformers(
     from sentence_transformers import SentenceTransformer
 
     config = get_effective_config()
-    batch_size = config["ingestion"]["batch_size"]
-    model_name = config["ingestion"]["embedding_model"]
+    batch_size = config["embeddings"]["batch_size"]
+    model_name = config["embeddings"]["embedding_model"]
     model = SentenceTransformer(model_name)
 
     texts_list = list(texts)
@@ -72,19 +72,28 @@ def _generate_embeddings_fastembed(texts: Iterable[str]) -> list[list[float]]:
     from fastembed import TextEmbedding
 
     config = get_effective_config()
-    batch_size = config["ingestion"]["batch_size"]
-    model_name = config["ingestion"]["embedding_model"]
+    batch_size = config["embeddings"]["batch_size"]
+    model_name = config["embeddings"]["embedding_model"]
 
     texts_list = list(texts)
     all_embeddings = []
-    model = TextEmbedding(
-        model_name=model_name,
-        providers=[
-            # "TensorrtExecutionProvider",
-            "CUDAExecutionProvider",
-            "CPUExecutionProvider",
-        ],
-    )
+
+    try:
+        model = TextEmbedding(
+            model_name=model_name,
+            providers=[
+                # "TensorrtExecutionProvider",
+                "CUDAExecutionProvider",
+            ],
+        )
+    except ValueError:
+        print("CUDA not available, using CPU instead.")
+        model = TextEmbedding(
+            model_name=model_name,
+            providers=[
+                "CPUExecutionProvider",
+            ],
+        )
 
     with tqdm(
         total=len(texts_list),
@@ -117,7 +126,7 @@ def generate_embeddings(
     """
 
     config = get_effective_config()
-    backend = config["ingestion"]["embedding_backend"]
+    backend = config["embeddings"]["embedding_backend"]
 
     if backend == "fastembed":
         return _generate_embeddings_fastembed(texts)
