@@ -146,7 +146,7 @@ def parse_html(url: str, html: str, last_modified: str, library_name: str):
         library_name=library_name,
         version="latest",  # TODO: Implement version detection
         title=metadata.title if metadata else "Unknown",
-        description=metadata.description if metadata else "",
+        description=metadata.description,
         last_modified=last_modified,
         content=content,
     )

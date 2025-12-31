@@ -1,7 +1,6 @@
 import asyncio
 import json
 import platform
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -81,7 +80,7 @@ def add(
         [],
         "--docs-path",
         "-d",
-        help="Path to documentation within a git repo. Specify multiple times for multiple paths (e.g., -d docs/ -d wiki/). Defaults to 'docs/' if not specified.",
+        help="Path to documentation within a git repo. Specify multiple times for multiple paths (e.g., -d docs/ -d wiki/). Defaults to '/' if not specified.",
     ),
     filter_keywords: list[str] = typer.Option(
         [],
@@ -536,6 +535,8 @@ def _get_opencode_config_path() -> Path:
 
 def _find_openground_mcp_command() -> str:
     """Find the openground-mcp command, returning full path if found, otherwise the command name."""
+    import shutil
+
     command_path = shutil.which("openground-mcp")
     if command_path:
         return str(Path(command_path).resolve())
