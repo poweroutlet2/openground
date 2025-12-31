@@ -118,5 +118,19 @@
         "docs_paths": [
             "docs"
         ]
+    },
+    "opencode": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/sst/opencode.git",
+        "docs_paths": [
+            "packages/docs"
+        ]
+    },
+    "cloudflare": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/cloudflare/cloudflare-docs.git",
+        "docs_paths": [
+            "src/content/docs"
+        ]
     }
 }

@@ -12,8 +12,18 @@ class LibrarySource(TypedDict, total=False):
     docs_paths: List[str]
 
 
-def get_source_file_path() -> Path:
-    """Get the path to the sources.json file."""
+def get_source_file_path(custom_path: Optional[Path] = None) -> Path:
+    """Get the path to the sources.json file.
+    
+    Args:
+        custom_path: Optional custom path to sources.json file. If provided, this path is used.
+    
+    Returns:
+        Path to the sources.json file.
+    """
+    if custom_path is not None:
+        return Path(custom_path).expanduser()
+    
     # Try looking in the same directory as this file first (if installed as package)
     pkg_source_file = Path(__file__).parent / "sources.json"
     if pkg_source_file.exists():
@@ -27,9 +37,16 @@ def get_source_file_path() -> Path:
     return pkg_source_file
 
 
-def load_source_file() -> dict[str, LibrarySource]:
-    """Load the library source file from sources.json."""
-    path = get_source_file_path()
+def load_source_file(custom_path: Optional[Path] = None) -> dict[str, LibrarySource]:
+    """Load the library source file from sources.json.
+    
+    Args:
+        custom_path: Optional custom path to sources.json file. If provided, this path is used.
+    
+    Returns:
+        Dictionary mapping library names to their source configurations.
+    """
+    path = get_source_file_path(custom_path)
     if not path.exists():
         return {}
 
@@ -37,7 +54,15 @@ def load_source_file() -> dict[str, LibrarySource]:
         return json.load(f)
 
 
-def get_library_config(name: str) -> Optional[LibrarySource]:
-    """Get the configuration for a specific library by name."""
-    source_file = load_source_file()
+def get_library_config(name: str, custom_path: Optional[Path] = None) -> Optional[LibrarySource]:
+    """Get the configuration for a specific library by name.
+    
+    Args:
+        name: Name of the library to get configuration for.
+        custom_path: Optional custom path to sources.json file. If provided, this path is used.
+    
+    Returns:
+        Library source configuration if found, None otherwise.
+    """
+    source_file = load_source_file(custom_path)
     return source_file.get(name)

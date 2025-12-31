@@ -114,7 +114,6 @@ def _validate_table_metadata(table: Table, backend: str, model: str) -> None:
     stored_metadata = _get_table_metadata(table)
 
     if stored_metadata is None:
-        print(stored_metadata)
         raise ValueError(f"Table metadata not found: {stored_metadata}")
 
     stored_backend = stored_metadata["embedding_backend"]

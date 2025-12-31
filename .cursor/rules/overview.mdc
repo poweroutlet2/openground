@@ -13,13 +13,6 @@ Openground is a tool for extracting framework and library documentation from off
 
 The philosophy mandates simplicity of implementation for maintainers and ease of use for users.
 
-## Tech Stack
-
--   **Language**: Python 3.10+
--   **Package Management**: uv
--   **Key Libraries**: aiohttp, pydantic, trafilatura, typer, lancedb, sentence-transformers, fastembed, torch, langchain-text-splitters, fastmcp, pandas, rich
--   **Development Tools**: ruff (linting), ty (type checking)
-
 ## Coding Style
 
 -   **Paradigm**: Functional programming preferred
@@ -29,7 +22,7 @@ The philosophy mandates simplicity of implementation for maintainers and ease of
     -   Concise but informative docstrings for functions
     -   Prefer self-commenting code
     -   Inline comments only for particularly confusing lines
--   **Comments**: Only touch existing comments if modifying the related code
+-   **Comments**: Do not add comments that a human would not add. Do not add excessive comments. Do not add comments to parts of the code you are not working on.
 
 ## Directory Structure
 

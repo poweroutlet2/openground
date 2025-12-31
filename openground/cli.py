@@ -23,7 +23,7 @@ from openground.config import (
     clear_config_cache,
 )
 from openground.console import success, error, hint, warning
-from openground.extract.source import get_library_config
+from openground.extract.source import get_library_config, get_source_file_path
 
 
 app = typer.Typer(
@@ -95,6 +95,11 @@ def add(
         "-y",
         help="Skip confirmation prompt between extract and ingest.",
     ),
+    sources_file: Optional[str] = typer.Option(
+        None,
+        "--sources-file",
+        help="Path to a custom sources.json file. If not provided, checks config for 'sources.file_path', then uses default.",
+    ),
 ):
     """
     Extract documentation from a source (source file, sitemap, or git) and ingest it.
@@ -109,8 +114,21 @@ def add(
     console = Console()
     config = get_effective_config()
 
+    # Determine which sources file to use (CLI option > config > default)
+    sources_file_path: Optional[Path] = None
+    if sources_file:
+        sources_file_path = Path(sources_file).expanduser()
+    elif "sources" in config and "file_path" in config["sources"]:
+        sources_file_path = Path(config["sources"]["file_path"]).expanduser()
+
     # Resolve configuration from source file if possible
-    source_config = get_library_config(library)
+    source_config = get_library_config(library, custom_path=sources_file_path)
+
+    # Print which sources file is being used if a config was found
+    if source_config:
+        actual_sources_path = get_source_file_path(custom_path=sources_file_path)
+        if actual_sources_path.exists():
+            hint(f"Using sources file: {actual_sources_path}")
     source_type = None
     final_source = source
     final_docs_paths = docs_paths
@@ -296,7 +314,7 @@ def extract_git(
 
 @app.command("embed")
 def embed(
-    library: Optional[str] = typer.Argument(
+    library: str = typer.Argument(
         ...,
         help="Library name to embed from raw_data/{library}.",
     ),
@@ -853,8 +871,6 @@ def config_set(
     #
     # Supports JSON literals for booleans, null, arrays, and objects:
     #   openground config set query.top_k 7
-    #   openground config set extraction.enabled true
-    #   openground config set query.filters '["docs","api"]'
     # For plain strings, keep as-is (no quotes needed).
     try:
         parsed_value = json.loads(value)

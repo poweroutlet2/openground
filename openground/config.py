@@ -46,7 +46,7 @@ DEFAULT_TABLE_NAME = "documents"
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_EMBEDDING_DIMENSIONS = 384
 # fastembed or sentence-transformers
-DEFAULT_EMBEDDING_BACKEND = "sentence-transformers" 
+DEFAULT_EMBEDDING_BACKEND = "sentence-transformers"
 
 # Default values for embeddings parameters
 DEFAULT_BATCH_SIZE = 32
