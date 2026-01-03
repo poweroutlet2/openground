@@ -177,6 +177,9 @@ async def extract_repo(
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
+        # Detect default branch for URL construction
+        default_branch = get_default_branch(repo_url)
+
         # Resolve the actual tag name if version is provided
         version_to_store: str
         if version and version != "latest":
@@ -189,7 +192,7 @@ async def extract_repo(
             ref_to_checkout = resolved_tag
             version_to_store = resolved_tag
         else:
-            ref_to_checkout = "main"
+            ref_to_checkout = default_branch
             version_to_store = "latest"
 
         print(f"Cloning {repo_url} (shallow, no-checkout, ref: {ref_to_checkout})...")
@@ -214,7 +217,7 @@ async def extract_repo(
             return
 
         # Sparse checkout configuration
-
+        
         # Normalize docs_paths
         git_docs_paths = []
         for path in docs_paths:
@@ -267,10 +270,6 @@ async def extract_repo(
 
         print(f"Processing {len(doc_files)} files...")
 
-        # Detect default branch for URL construction
-        branch = get_default_branch(repo_url)
-        print(f"Detected default branch: {branch}")
-
         # Construct base URL for file references
         # Try to make a helpful link (assuming GitHub/GitLab style)
         parsed_url = urlparse(repo_url)
@@ -278,7 +277,7 @@ async def extract_repo(
         if "github.com" in parsed_url.netloc or "gitlab.com" in parsed_url.netloc:
             # GitHub/GitLab: base/tree/branch/path (or /blob/ for files)
             # Use /tree/ as it works reasonably for both dirs and files as a base
-            base_web_url = f"{base_web_url}/tree/{branch}"
+            base_web_url = f"{base_web_url}/tree/{default_branch}"
 
         for file_path in doc_files:
             try:
