@@ -60,8 +60,11 @@ To add documentation from a git repo to openground, run:
 openground add library-name \
   --source https://github.com/example/example.git \
   --docs-path docs/ \
+  --version v1.0.0 \
   -y
 ```
+
+The `--version` flag specifies a git tag to checkout (defaults to latest).
 
 To add documentation from a sitemap to openground, run:
 
@@ -74,6 +77,8 @@ openground add library-name \
 ```
 
 This will download the docs, embed them, and store them into lancedb. All locally.
+
+Multiple versions of the same library can be stored and queried independently.
 
 ### Use with AI Agents
 
@@ -104,7 +109,7 @@ Here's how to add the fastembed documentation and make it available to Claude Co
 uv tool install openground
 
 # 2. Add fastembed to openground
-openground add fastembed --source https://github.com/qdrant/fastembed.git --docs-path docs/ -y
+openground add fastembed --source https://github.com/qdrant/fastembed.git --docs-path docs/ --version v0.7.4 -y
 
 # 3. Configure Claude Code to use openground MCP
 openground install-mcp --claude-code

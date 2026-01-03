@@ -121,11 +121,49 @@ def get_default_branch(repo_url: str) -> str:
     return "main"
 
 
+def resolve_tag_name(repo_url: str, version: str) -> str | None:
+    """
+    Check which variant of a tag exists on the remote (with/without leading 'v').
+    Makes a single network call to fetch all tags.
+
+    Returns the actual tag name if found, None otherwise.
+    """
+    # Get all tags
+    result = subprocess.run(
+        ["git", "ls-remote", "--tags", "--refs", repo_url],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        return None
+
+    # Parse tag names from output (format: "hash\trefs/tags/tagname")
+    remote_tags = {
+        line.split("refs/tags/")[-1]
+        for line in result.stdout.splitlines()
+        if "refs/tags/" in line
+    }
+
+    # Check both variants (with/without 'v')
+    if version.startswith("v"):
+        variants = [version, version[1:]]
+    else:
+        variants = [f"v{version}", version]
+
+    for tag in variants:
+        if tag in remote_tags:
+            return tag
+
+    return None
+
+
 async def extract_repo(
     repo_url: str,
     docs_paths: list[str],
     output_dir: Path,
     library_name: str,
+    version: str | None = None,
 ):
     """
     Clone repo and extract documentation files.
@@ -139,7 +177,22 @@ async def extract_repo(
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
-        print(f"Cloning {repo_url} (shallow, no-checkout)...")
+        # Resolve the actual tag name if version is provided
+        version_to_store: str
+        if version:
+            if (resolved_tag := resolve_tag_name(repo_url, version)) is None:
+                alt_version = version[1:] if version.startswith("v") else f"v{version}"
+                error(
+                    f"Tag '{version}' not found in repository (checked both '{version}' and '{alt_version}')"
+                )
+                return
+            ref_to_checkout = resolved_tag
+            version_to_store = resolved_tag
+        else:
+            ref_to_checkout = "main"
+            version_to_store = "latest"
+
+        print(f"Cloning {repo_url} (shallow, no-checkout, ref: {ref_to_checkout})...")
 
         # Clone with minimal depth and no checkout
         clone_cmd = [
@@ -149,6 +202,8 @@ async def extract_repo(
             "1",
             "--filter=blob:none",
             "--no-checkout",
+            "--branch",
+            ref_to_checkout,
             repo_url,
             str(temp_path),
         ]
@@ -246,7 +301,7 @@ async def extract_repo(
                     ParsedPage(
                         url=file_url,
                         library_name=library_name,
-                        version="latest",
+                        version=version_to_store,
                         title=title,
                         description=metadata.get("description")
                         or f"Documentation file from {repo_url}",

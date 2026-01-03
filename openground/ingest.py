@@ -17,10 +17,19 @@ from openground.embeddings import generate_embeddings
 
 
 def load_parsed_pages(directory: Path) -> list[ParsedPage]:
-    pages: list[ParsedPage] = []
+    """
+    Load parsed pages from a directory.
+
+    Args:
+        directory: Path to the directory containing JSON files
+
+    Returns:
+        List of parsed pages.
+    """
     if not directory.exists():
         raise FileNotFoundError(f"Data directory not found: {directory}")
 
+    pages: list[ParsedPage] = []
     for path in sorted(list(directory.glob("*.md")) + list(directory.glob("*.json"))):
         with path.open("r", encoding="utf-8") as f:
             raw = json.load(f)

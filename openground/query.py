@@ -32,6 +32,7 @@ def _escape_sql_string(value: str) -> str:
 
 def search(
     query: str,
+    version: str,
     db_path: Path = DEFAULT_DB_PATH,
     table_name: str = DEFAULT_TABLE_NAME,
     library_name: Optional[str] = None,
@@ -43,6 +44,7 @@ def search(
 
     Args:
         query: User query text.
+        version: Version to filter results by.
         db_path: Path to LanceDB storage.
         table_name: Table name to search.
         library_name: Optional filter on library name column.
@@ -57,6 +59,9 @@ def search(
     query_vec = generate_embeddings([query])[0]
 
     search_builder = table.search(query_type="hybrid").text(query).vector(query_vec)
+
+    safe_version = _escape_sql_string(version)
+    search_builder = search_builder.where(f"version = '{safe_version}'")
 
     if library_name:
         safe_name = _escape_sql_string(library_name)
@@ -73,6 +78,7 @@ def search(
         # Return the full chunk so downstream consumers (LLM) see the whole text.
         snippet = (item.get("content") or "").strip()
         source = item.get("url") or "unknown"
+        item_version = item.get("version") or version
         score = item.get("_distance") or item.get("_score")
 
         score_str = ""
@@ -82,10 +88,12 @@ def search(
             score_str = f", score={score}"
 
         # Embed tool call hint for fetching full content
-        tool_hint = json.dumps({"tool": "get_full_content", "url": source})
+        tool_hint = json.dumps(
+            {"tool": "get_full_content", "url": source, "version": item_version}
+        )
 
         lines.append(
-            f'{idx}. **{title}**: "{snippet}" (Source: {source}{score_str})\n'
+            f'{idx}. **{title}**: "{snippet}" (Source: {source}, Version: {item_version}{score_str})\n'
             f"   To get full page content: {tool_hint}"
         )
 
@@ -108,33 +116,67 @@ def list_libraries(
     return sorted(libraries)
 
 
-def search_libraries(
-    search_term: str,
+def list_libraries_with_versions(
     db_path: Path = DEFAULT_DB_PATH,
     table_name: str = DEFAULT_TABLE_NAME,
-) -> list[str]:
+    search_term: Optional[str] = None,
+) -> dict[str, list[str]]:
     """
-    Return sorted unique library names that contain the search term (case-insensitive).
-    Returns a list with a message if no libraries match.
+    Return a dictionary mapping library names to their sorted version lists.
+
+    Args:
+        db_path: Path to LanceDB storage.
+        table_name: Table name to search.
+        search_term: Optional search term to filter library names (case-insensitive).
+
+    Returns:
+        Dictionary mapping library names to sorted lists of versions.
+        Returns empty dict if no libraries found or table doesn't exist.
     """
-    libraries = list_libraries(db_path=db_path, table_name=table_name)
-    term_lower = search_term.lower()
-    filtered = [lib for lib in libraries if term_lower in lib.lower()]
-    if not filtered:
-        return [f"No libraries found matching '{search_term}'."]
-    return filtered
+    db = lancedb.connect(str(db_path))
+    if table_name not in db.table_names():
+        return {}
+    table = db.open_table(table_name)
+    df = table.to_pandas()
+
+    library_version_pairs = df[["library_name", "version"]].dropna()
+
+    # Group by library name and collect unique versions
+    result: dict[str, list[str]] = {}
+    for _, row in library_version_pairs.iterrows():
+        lib_name = row["library_name"]
+        version = row["version"]
+        if lib_name not in result:
+            result[lib_name] = []
+        if version not in result[lib_name]:
+            result[lib_name].append(version)
+
+    for lib_name in result:
+        result[lib_name] = sorted(result[lib_name])
+
+    if search_term:
+        term_lower = search_term.lower()
+        result = {
+            lib_name: versions
+            for lib_name, versions in result.items()
+            if term_lower in lib_name.lower()
+        }
+
+    return dict(sorted(result.items()))
 
 
 def get_full_content(
     url: str,
+    version: str,
     db_path: Path = DEFAULT_DB_PATH,
     table_name: str = DEFAULT_TABLE_NAME,
 ) -> str:
     """
-    Retrieve the full content of a document by its URL.
+    Retrieve the full content of a document by its URL and version.
 
     Args:
         url: URL of the document to retrieve.
+        version: Version of the document to retrieve.
         db_path: Path to LanceDB storage.
         table_name: Table name to search.
 
@@ -146,33 +188,44 @@ def get_full_content(
         return f"No content found for URL: {url}"
     table = db.open_table(table_name)
 
-    # Query all chunks for this URL
+    # Query all chunks for this URL and version
     safe_url = _escape_sql_string(url)
-    df = table.search().where(f"url = '{safe_url}'").to_pandas()
+    safe_version = _escape_sql_string(version)
+    df = (
+        table.search()
+        .where(f"url = '{safe_url}' AND version = '{safe_version}'")
+        .to_pandas()
+    )
 
     if df.empty:
-        return f"No content found for URL: {url}"
+        return f"No content found for URL: {url} (version: {version})"
 
     # Sort by chunk_index and concatenate content
     df = df.sort_values("chunk_index")
     full_content = "\n\n".join(df["content"].tolist())
 
     title = df.iloc[0].get("title", "(no title)")
-    return f"# {title}\n\nSource: {url}\n\n{full_content}"
+    return f"# {title}\n\nSource: {url}\nVersion: {version}\n\n{full_content}"
 
 
 def get_library_stats(
     library_name: str,
+    version: str,
     db_path: Path = DEFAULT_DB_PATH,
     table_name: str = DEFAULT_TABLE_NAME,
 ) -> dict | None:
-    """Get statistics for a library (chunk count, unique URLs, etc.)."""
+    """Get statistics for a library version (chunk count, unique URLs, etc.)."""
     db = lancedb.connect(str(db_path))
     if table_name not in db.table_names():
         return None
     table = db.open_table(table_name)
     safe_name = _escape_sql_string(library_name)
-    df = table.search().where(f"library_name = '{safe_name}'").to_pandas()
+    safe_version = _escape_sql_string(version)
+    df = (
+        table.search()
+        .where(f"library_name = '{safe_name}' AND version = '{safe_version}'")
+        .to_pandas()
+    )
 
     if df.empty:
         return None
@@ -182,6 +235,7 @@ def get_library_stats(
 
     return {
         "library_name": library_name,
+        "version": version,
         "chunk_count": len(df),
         "unique_urls": df["url"].nunique(),
         "titles": titles,
@@ -190,20 +244,26 @@ def get_library_stats(
 
 def delete_library(
     library_name: str,
+    version: str,
     db_path: Path = DEFAULT_DB_PATH,
     table_name: str = DEFAULT_TABLE_NAME,
 ) -> int:
-    """Delete all documents for a library. Returns count of deleted rows."""
+    """Delete all documents for a library version. Returns count of deleted rows."""
     db = lancedb.connect(str(db_path))
     if table_name not in db.table_names():
         return 0
     table = db.open_table(table_name)
     safe_name = _escape_sql_string(library_name)
+    safe_version = _escape_sql_string(version)
 
     # Get count before deletion
-    df = table.search().where(f"library_name = '{safe_name}'").to_pandas()
+    df = (
+        table.search()
+        .where(f"library_name = '{safe_name}' AND version = '{safe_version}'")
+        .to_pandas()
+    )
     count = len(df)
 
     # Delete rows
-    table.delete(f"library_name = '{safe_name}'")
+    table.delete(f"library_name = '{safe_name}' AND version = '{safe_version}'")
     return count

@@ -75,6 +75,7 @@ async def process_url(
     session: ClientSession,
     url: str,
     library_name: str,
+    version: str,
 ):
     """
     Process a single URL.
@@ -84,6 +85,7 @@ async def process_url(
         session: The session to use to make the request.
         url: The URL to process.
         library_name: The name of the library/framework for this documentation.
+        version: The version string to store in the parsed page.
     """
 
     async with semaphore:
@@ -97,7 +99,7 @@ async def process_url(
                 last_modified = response.headers.get("Last-Modified") or ""
 
                 result = await asyncio.to_thread(
-                    parse_html, url, html, last_modified, library_name
+                    parse_html, url, html, last_modified, library_name, version
                 )
 
                 return result
@@ -106,13 +108,18 @@ async def process_url(
             return None
 
 
-def parse_html(url: str, html: str, last_modified: str, library_name: str):
+def parse_html(
+    url: str, html: str, last_modified: str, library_name: str, version: str
+):
     """
     Parse the HTML of a page.
 
     Args:
+        url: The URL of the page.
         html: The HTML of the page.
+        last_modified: The Last-Modified header value.
         library_name: The name of the library/framework for this documentation.
+        version: The version string to store in the parsed page.
     """
     metadata = trafilatura.extract_metadata(html)
     content = trafilatura.extract(
@@ -144,7 +151,7 @@ def parse_html(url: str, html: str, last_modified: str, library_name: str):
     return ParsedPage(
         url=url,
         library_name=library_name,
-        version="latest",  # TODO: Implement version detection
+        version=version,
         title=metadata.title if metadata else "Unknown",
         description=metadata.description,
         last_modified=last_modified,
@@ -158,9 +165,10 @@ async def extract_pages(
     library_name: str = DEFAULT_LIBRARY_NAME,
     output_dir: Path | None = None,
     filter_keywords: list[str] = [],
+    version: str = "latest",
 ):
     if output_dir is None:
-        output_dir = get_library_raw_data_dir(library_name)
+        output_dir = get_library_raw_data_dir(library_name, version=version)
     connector = aiohttp.TCPConnector()
 
     async with aiohttp.ClientSession(connector=connector) as session:
@@ -178,7 +186,7 @@ async def extract_pages(
         semaphore = asyncio.Semaphore(concurrency_limit)
 
         tasks = [
-            process_url(semaphore, session, url, library_name)
+            process_url(semaphore, session, url, library_name, version)
             for url in urls
             if url is not None
         ]

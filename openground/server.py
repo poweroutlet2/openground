@@ -3,7 +3,11 @@ from pathlib import Path
 from fastmcp import FastMCP
 
 from openground.config import get_effective_config
-from openground.query import get_full_content, list_libraries, search, search_libraries
+from openground.query import (
+    get_full_content,
+    list_libraries_with_versions,
+    search,
+)
 
 mcp = FastMCP(
     "openground Documentation Search",
@@ -31,6 +35,7 @@ def _get_config():
 def search_documents_tool(
     query: str,
     library_name: str,
+    version: str,
 ) -> str:
     """
     Search the official documentation knowledge base to answer user questions.
@@ -38,62 +43,76 @@ def search_documents_tool(
     Always used this tool when a question might be answered or confirmed from
     the documentation.
 
-    First call list_libraries to see what libraries are available, then filter
-    by library_name.
+    First call list_libraries_tool to see what libraries and versions are available,
+    then filter by library_name and version.
     """
     config = _get_config()
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+    
+    # Validate that library and version exist
+    available_libraries = list_libraries_with_versions(
+        db_path=db_path,
+        table_name=table_name,
+    )
+    
+    if library_name not in available_libraries:
+        available_lib_names = ", ".join(sorted(available_libraries.keys()))
+        if available_lib_names:
+            return f"Library '{library_name}' not found. Available libraries: {available_lib_names}"
+        else:
+            return f"Library '{library_name}' not found. No libraries are currently available in the database."
+    
+    available_versions = available_libraries[library_name]
+    if version not in available_versions:
+        versions_str = ", ".join(available_versions)
+        return f"Version '{version}' not found for library '{library_name}'. Available versions: {versions_str}"
+    
+    # Library and version exist, proceed with search
     return search(
         query=query,
-        db_path=Path(config["db_path"]).expanduser(),
-        table_name=config["table_name"],
+        version=version,
+        db_path=db_path,
+        table_name=table_name,
         library_name=library_name,
         top_k=config["query"]["top_k"],
     )
 
 
 @mcp.tool
-def list_libraries_tool() -> list[str]:
+def list_libraries_tool(search_term: str | None = None) -> dict[str, list[str]]:
     """
-    Retrieve a list of available documentation libraries/frameworks.
+    Retrieve a dictionary of available documentation libraries/frameworks with their versions.
 
-    Use this tool to see what documentation is available before performing a
-    search. If the desired library is not in the list, you may prompt the user
-    to add it.
-    """
-    config = _get_config()
-    return list_libraries(
-        db_path=Path(config["db_path"]).expanduser(), table_name=config["table_name"]
-    )
+    Returns a dictionary mapping library names to lists of available versions.
+    Use this tool to see what documentation is available before performing a search.
+    If the desired library is not in the list, you may prompt the user to add it.
 
-
-@mcp.tool
-def search_available_libraries_tool(search_term: str) -> list[str]:
-    """
-    Search for available documentation libraries by name.
-
-    Use this tool to find libraries matching a search term.
-    Returns libraries whose names contain the search term (case-insensitive).
+    Args:
+        search_term: Optional search term to filter library names (case-insensitive).
+                     If provided, only libraries whose names contain the search term will be returned.
     """
     config = _get_config()
-    return search_libraries(
-        search_term=search_term,
+    return list_libraries_with_versions(
         db_path=Path(config["db_path"]).expanduser(),
         table_name=config["table_name"],
+        search_term=search_term,
     )
 
 
 @mcp.tool
-def get_full_content_tool(url: str) -> str:
+def get_full_content_tool(url: str, version: str) -> str:
     """
-    Retrieve the full content of a document by its URL.
+    Retrieve the full content of a document by its URL and version.
 
     Use this tool when you need to see the complete content of a page
-    that was returned in search results. The URL is provided in the
-    search result's tool hint.
+    that was returned in search results. The URL and version are provided
+    in the search result's tool hint.
     """
     config = _get_config()
     return get_full_content(
         url=url,
+        version=version,
         db_path=Path(config["db_path"]).expanduser(),
         table_name=config["table_name"],
     )
