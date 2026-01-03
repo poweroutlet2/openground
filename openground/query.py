@@ -88,7 +88,9 @@ def search(
             score_str = f", score={score}"
 
         # Embed tool call hint for fetching full content
-        tool_hint = json.dumps({"tool": "get_full_content", "url": source, "version": item_version})
+        tool_hint = json.dumps(
+            {"tool": "get_full_content", "url": source, "version": item_version}
+        )
 
         lines.append(
             f'{idx}. **{title}**: "{snippet}" (Source: {source}, Version: {item_version}{score_str})\n'
@@ -138,7 +140,7 @@ def list_libraries_with_versions(
     df = table.to_pandas()
 
     library_version_pairs = df[["library_name", "version"]].dropna()
-    
+
     # Group by library name and collect unique versions
     result: dict[str, list[str]] = {}
     for _, row in library_version_pairs.iterrows():
@@ -148,10 +150,10 @@ def list_libraries_with_versions(
             result[lib_name] = []
         if version not in result[lib_name]:
             result[lib_name].append(version)
-    
+
     for lib_name in result:
         result[lib_name] = sorted(result[lib_name])
-    
+
     if search_term:
         term_lower = search_term.lower()
         result = {
@@ -159,7 +161,7 @@ def list_libraries_with_versions(
             for lib_name, versions in result.items()
             if term_lower in lib_name.lower()
         }
-    
+
     return dict(sorted(result.items()))
 
 
@@ -189,7 +191,11 @@ def get_full_content(
     # Query all chunks for this URL and version
     safe_url = _escape_sql_string(url)
     safe_version = _escape_sql_string(version)
-    df = table.search().where(f"url = '{safe_url}' AND version = '{safe_version}'").to_pandas()
+    df = (
+        table.search()
+        .where(f"url = '{safe_url}' AND version = '{safe_version}'")
+        .to_pandas()
+    )
 
     if df.empty:
         return f"No content found for URL: {url} (version: {version})"
@@ -215,7 +221,11 @@ def get_library_stats(
     table = db.open_table(table_name)
     safe_name = _escape_sql_string(library_name)
     safe_version = _escape_sql_string(version)
-    df = table.search().where(f"library_name = '{safe_name}' AND version = '{safe_version}'").to_pandas()
+    df = (
+        table.search()
+        .where(f"library_name = '{safe_name}' AND version = '{safe_version}'")
+        .to_pandas()
+    )
 
     if df.empty:
         return None
@@ -247,7 +257,11 @@ def delete_library(
     safe_version = _escape_sql_string(version)
 
     # Get count before deletion
-    df = table.search().where(f"library_name = '{safe_name}' AND version = '{safe_version}'").to_pandas()
+    df = (
+        table.search()
+        .where(f"library_name = '{safe_name}' AND version = '{safe_version}'")
+        .to_pandas()
+    )
     count = len(df)
 
     # Delete rows

@@ -35,11 +35,11 @@ DEFAULT_RAW_DATA_DIR_BASE = get_data_home() / "raw_data"
 
 def get_library_raw_data_dir(library_name: str, version: str) -> Path:
     """Construct the path to the raw data directory for a given library name and version.
-    
+
     Args:
         library_name: Name of the library.
         version: Version string.
-    
+
     Returns:
         Path to the raw data directory.
     """

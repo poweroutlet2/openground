@@ -108,7 +108,9 @@ async def process_url(
             return None
 
 
-def parse_html(url: str, html: str, last_modified: str, library_name: str, version: str):
+def parse_html(
+    url: str, html: str, last_modified: str, library_name: str, version: str
+):
     """
     Parse the HTML of a page.
 

@@ -19,7 +19,8 @@ from openground.config import (
     save_config,
     get_effective_config,
     get_default_config,
-    clear_config_cache, DEFAULT_LIBRARY_VERSION,
+    clear_config_cache,
+    DEFAULT_LIBRARY_VERSION,
 )
 from openground.console import success, error, hint, warning
 from openground.extract.source import get_library_config, get_source_file_path
@@ -160,7 +161,7 @@ def add(
                 f"--version can only be used for git repo sources. Provided source {source} is not a git repo."
             )
             raise typer.Exit(1)
-    
+
     if version is None:
         version = DEFAULT_LIBRARY_VERSION
 
@@ -356,10 +357,12 @@ def embed(
         from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
     data_dir = get_library_raw_data_dir(library, version=version)
-    
+
     if not data_dir.exists():
         raise typer.BadParameter(
-            f"Library '{library}'" + (f" version '{version}'" if version else "") + f" not found at {data_dir}. "
+            f"Library '{library}'"
+            + (f" version '{version}'" if version else "")
+            + f" not found at {data_dir}. "
             f"Use 'list-raw-libraries' to see available libraries."
         )
 

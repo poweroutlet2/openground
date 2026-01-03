@@ -19,10 +19,10 @@ from openground.embeddings import generate_embeddings
 def load_parsed_pages(directory: Path) -> list[ParsedPage]:
     """
     Load parsed pages from a directory.
-    
+
     Args:
         directory: Path to the directory containing JSON files
-    
+
     Returns:
         List of parsed pages.
     """
