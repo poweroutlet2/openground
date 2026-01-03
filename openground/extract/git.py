@@ -179,7 +179,7 @@ async def extract_repo(
 
         # Resolve the actual tag name if version is provided
         version_to_store: str
-        if version:
+        if version and version != "latest":
             if (resolved_tag := resolve_tag_name(repo_url, version)) is None:
                 alt_version = version[1:] if version.startswith("v") else f"v{version}"
                 error(
