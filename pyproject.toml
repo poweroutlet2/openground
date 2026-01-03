@@ -47,7 +47,13 @@ dependencies = [
 fastembed-gpu = ["fastembed-gpu>=0.2.0,<1.0.0"]
 
 [dependency-groups]
-dev = ["mkdocs>=1.6.1", "ruff>=0.14.8", "ty>=0.0.7"]
+dev = [
+    "duckdb>=1.4.3",
+    "ipykernel>=7.1.0",
+    "mkdocs>=1.6.1",
+    "ruff>=0.14.8",
+    "ty>=0.0.7",
+]
 
 [project.urls]
 Homepage = "https://github.com/poweroutlet2/openground"

@@ -19,7 +19,7 @@ from openground.config import (
     save_config,
     get_effective_config,
     get_default_config,
-    clear_config_cache,
+    clear_config_cache, DEFAULT_LIBRARY_VERSION,
 )
 from openground.console import success, error, hint, warning
 from openground.extract.source import get_library_config, get_source_file_path
@@ -75,6 +75,12 @@ def add(
     ),
     source: Optional[str] = typer.Option(
         None, "--source", "-s", help="Root sitemap URL or Git repo URL to crawl."
+    ),
+    version: str = typer.Option(
+        DEFAULT_LIBRARY_VERSION,
+        "--version",
+        "-v",
+        help="Version of the library to extract. Only works for git repos. Corresponds to the tag of the version in the git repo. Defaults to latest. Sitemap sources will always use latest.",
     ),
     docs_paths: list[str] = typer.Option(
         [],
@@ -148,6 +154,16 @@ def add(
         if not final_filter_keywords and source_type == "sitemap":
             final_filter_keywords = source_config.get("filter_keywords", [])
 
+    if version is not None:
+        if source_type != "git_repo":
+            error(
+                f"--version can only be used for git repo sources. Provided source {source} is not a git repo."
+            )
+            raise typer.Exit(1)
+    
+    if version is None:
+        version = DEFAULT_LIBRARY_VERSION
+
     # Detect if source is provided manually or type is unknown
     if not final_source:
         error(
@@ -174,7 +190,8 @@ def add(
             )
 
     # Extract
-    output_dir = get_library_raw_data_dir(library)
+    # Determine version for directory path (always a string, defaults to "latest")
+    output_dir = get_library_raw_data_dir(library, version=version)
 
     async def _run_extract():
         if source_type == "sitemap":
@@ -187,6 +204,7 @@ def add(
                 library_name=library,
                 output_dir=output_dir,
                 filter_keywords=final_filter_keywords,
+                version=version,
             )
         elif source_type == "git_repo":
             with console.status("[bold green]"):
@@ -197,6 +215,7 @@ def add(
                 docs_paths=final_docs_paths if final_docs_paths else ["/"],
                 output_dir=output_dir,
                 library_name=library,
+                version=version,
             )
 
     with console.status("[bold green]"):
@@ -228,7 +247,7 @@ def add(
 
 
 @app.command()
-def extract(
+def extract_sitemap(
     sitemap_url: str = typer.Option(
         SITEMAP_URL, "--sitemap-url", "-s", help="Root sitemap URL to crawl."
     ),
@@ -256,15 +275,13 @@ def extract(
 
     from openground.extract.sitemap import extract_pages
 
-    # Get config
     config = get_effective_config()
 
-    # Use CLI flag if provided, otherwise use config value
     if concurrency_limit is None:
         concurrency_limit = config["extraction"]["concurrency_limit"]
 
-    # Output dir is always computed from library
-    output_dir = get_library_raw_data_dir(library)
+    version = "latest"
+    output_dir = get_library_raw_data_dir(library, version=version)
 
     async def _run():
         await extract_pages(
@@ -273,6 +290,7 @@ def extract(
             library_name=library,
             output_dir=output_dir,
             filter_keywords=filter_keywords,
+            version=version,
         )
 
     asyncio.run(_run())
@@ -293,12 +311,17 @@ def extract_git(
         "-l",
         help="Name of the library/framework for this documentation.",
     ),
+    version: str = typer.Option(
+        "latest",
+        "--version",
+        "-v",
+        help="Version of the library to extract. Corresponds to the tag of the version in the git repo. Defaults to latest.",
+    ),
 ):
     """Extract documentation from a git repository using shallow clone and sparse checkout."""
     from openground.extract.git import extract_repo
 
-    # Output dir is always computed from library
-    output_dir = get_library_raw_data_dir(library)
+    output_dir = get_library_raw_data_dir(library, version=version)
 
     async def _run():
         await extract_repo(
@@ -306,6 +329,7 @@ def extract_git(
             docs_paths=docs_paths,
             output_dir=output_dir,
             library_name=library,
+            version=version,
         )
 
     asyncio.run(_run())
@@ -317,6 +341,12 @@ def embed(
         ...,
         help="Library name to embed from raw_data/{library}.",
     ),
+    version: str = typer.Option(
+        "latest",
+        "--version",
+        "-v",
+        help="Version of the library to embed.",
+    ),
 ):
     """Chunk documents, generate embeddings, and embed into the local db."""
     from rich.console import Console
@@ -325,10 +355,11 @@ def embed(
     with console.status("[bold green]"):
         from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
-    data_dir = get_library_raw_data_dir(library)
+    data_dir = get_library_raw_data_dir(library, version=version)
+    
     if not data_dir.exists():
         raise typer.BadParameter(
-            f"Library '{library}' not found at {data_dir}. "
+            f"Library '{library}'" + (f" version '{version}'" if version else "") + f" not found at {data_dir}. "
             f"Use 'list-raw-libraries' to see available libraries."
         )
 
@@ -339,6 +370,9 @@ def embed(
 @app.command("query")
 def query_cmd(
     query: str = typer.Argument(..., help="Query string for hybrid search."),
+    version: str = typer.Option(
+        DEFAULT_LIBRARY_VERSION, "--version", "-v", help="Version to filter results by."
+    ),
     library: Optional[str] = typer.Option(
         None,
         "--library",
@@ -365,6 +399,7 @@ def query_cmd(
 
     results_md = search(
         query=query,
+        version=version,
         db_path=db_path,
         table_name=table_name,
         library_name=library,
@@ -376,8 +411,8 @@ def query_cmd(
 @app.command("list-libraries")
 @app.command("ls")
 def list_libraries_cmd():
-    """List available libraries stored in the local db."""
-    from openground.query import list_libraries
+    """List available libraries and their versions stored in the local db."""
+    from openground.query import list_libraries_with_versions
 
     # Get config
     config = get_effective_config()
@@ -386,13 +421,16 @@ def list_libraries_cmd():
     db_path = Path(config["db_path"]).expanduser()
     table_name = config["table_name"]
 
-    libraries = list_libraries(db_path=db_path, table_name=table_name)
-    if not libraries:
+    libraries_with_versions = list_libraries_with_versions(
+        db_path=db_path, table_name=table_name
+    )
+    if not libraries_with_versions:
         print("No libraries found.")
         return
 
-    for lib in libraries:
-        print(lib)
+    for lib_name, versions in libraries_with_versions.items():
+        versions_str = ", ".join(versions)
+        print(f"{lib_name}: {versions_str}")
 
 
 @app.command("list-raw-libraries")
@@ -404,23 +442,34 @@ def list_raw_libraries_cmd():
         print("No libraries found in raw_data.")
         return
 
-    libraries = [d.name for d in raw_data_dir.iterdir() if d.is_dir()]
-    if not libraries:
+    libraries_with_versions: dict[str, list[str]] = {}
+    for lib_dir in raw_data_dir.iterdir():
+        if lib_dir.is_dir():
+            lib_name = lib_dir.name
+            versions = [d.name for d in lib_dir.iterdir() if d.is_dir()]
+            if versions:
+                libraries_with_versions[lib_name] = sorted(versions)
+
+    if not libraries_with_versions:
         print("No libraries found in raw_data.")
         return
 
     print("Available libraries in raw_data:")
-    for lib in sorted(libraries):
-        print(f"  - {lib}")
+    for lib_name, versions in sorted(libraries_with_versions.items()):
+        versions_str = ", ".join(versions)
+        print(f"{lib_name}: {versions_str}")
 
 
 @app.command("remove")
 @app.command("rm")
 def remove_library_cmd(
     library_name: str = typer.Argument(..., help="Name of the library to remove."),
+    version: str = typer.Option(
+        ..., "--version", "-v", help="Version of the library to remove."
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ):
-    """Remove all documents for a library from the local db."""
+    """Remove all documents for a library version from the local db."""
     from openground.query import get_library_stats, delete_library
 
     # Get config
@@ -430,13 +479,14 @@ def remove_library_cmd(
     db_path = Path(config["db_path"]).expanduser()
     table_name = config["table_name"]
 
-    stats = get_library_stats(library_name, db_path, table_name)
+    stats = get_library_stats(library_name, version, db_path, table_name)
     if not stats:
-        print(f"Library '{library_name}' not found.")
+        print(f"Library '{library_name}' version '{version}' not found.")
         raise typer.Exit(1)
 
     # Show confirmation info
     print(f"\nLibrary: {stats['library_name']}")
+    print(f"Version: {stats['version']}")
     print(f"  Chunks: {stats['chunk_count']}")
     print(f"  Pages:  {stats['unique_urls']}")
     if stats["titles"]:
@@ -445,14 +495,18 @@ def remove_library_cmd(
         print("  Sample titles: (no titles available)")
 
     if not yes:
-        typer.confirm("\nAre you sure you want to delete this library?", abort=True)
+        typer.confirm(
+            "\nAre you sure you want to delete this library version?", abort=True
+        )
 
-    deleted = delete_library(library_name, db_path, table_name)
-    success(f"\nDeleted {deleted} chunks for library '{library_name}'.")
+    deleted = delete_library(library_name, version, db_path, table_name)
+    success(
+        f"\nDeleted {deleted} chunks for library '{library_name}' version '{version}'."
+    )
 
     # Check if raw library directory exists and offer to delete
     if not yes:
-        raw_library_dir = get_library_raw_data_dir(library_name)
+        raw_library_dir = get_library_raw_data_dir(library_name, version=version)
         if raw_library_dir.exists():
             if typer.confirm(f"\nAlso delete raw files at {raw_library_dir}?"):
                 import shutil
@@ -829,7 +883,10 @@ config_app = typer.Typer(help="Manage openground configuration.")
 app.add_typer(config_app, name="config")
 
 # Nuke Sub App
-nuke_app = typer.Typer(help="Delete all data from raw_data and/or LanceDB.")
+nuke_app = typer.Typer(
+    help="Delete all data from raw_data and/or LanceDB.",
+    no_args_is_help=True,
+)
 app.add_typer(nuke_app, name="nuke")
 
 

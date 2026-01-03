@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import TypedDict, Literal, Optional
+from typing import TypedDict, Literal
 
 
 class LibrarySource(TypedDict, total=False):

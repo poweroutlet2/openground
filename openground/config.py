@@ -33,17 +33,26 @@ CONCURRENCY_LIMIT = 50
 DEFAULT_RAW_DATA_DIR_BASE = get_data_home() / "raw_data"
 
 
-def get_library_raw_data_dir(library_name: str) -> Path:
-    """Construct the path to the raw data directory for a given library name."""
+def get_library_raw_data_dir(library_name: str, version: str) -> Path:
+    """Construct the path to the raw data directory for a given library name and version.
+    
+    Args:
+        library_name: Name of the library.
+        version: Version string.
+    
+    Returns:
+        Path to the raw data directory.
+    """
     config = get_effective_config()
     raw_data_dir_base = Path(config.get("raw_data_dir", str(DEFAULT_RAW_DATA_DIR_BASE)))
-    return raw_data_dir_base / library_name.lower()
+    return raw_data_dir_base / library_name.lower() / version
 
 
 # Embeddings / query defaults
 DEFAULT_DB_PATH = get_data_home() / "lancedb"
 DEFAULT_TABLE_NAME = "documents"
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+DEFAULT_LIBRARY_VERSION = "latest"
 DEFAULT_EMBEDDING_DIMENSIONS = 384
 # fastembed or sentence-transformers
 DEFAULT_EMBEDDING_BACKEND = "sentence-transformers"
@@ -52,7 +61,6 @@ DEFAULT_EMBEDDING_BACKEND = "sentence-transformers"
 DEFAULT_BATCH_SIZE = 32
 DEFAULT_CHUNK_SIZE = 800
 DEFAULT_CHUNK_OVERLAP = 200
-
 # Default values for query parameters
 DEFAULT_TOP_K = 5
 

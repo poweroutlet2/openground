@@ -21,13 +21,12 @@ async def save_results(results: list[ParsedPage | None], output_dir: Path):
     Save the results to a file.
 
     Args:
-        results: The list of parsed pages to save.
-        output_dir: The raw data directory for the library.
+        results: The list of parsed pages to save
+        output_dir: The raw data directory for the library/version
     """
 
     if output_dir.exists():
-        print("Clearing existing raw data files for library...")
-        # Clear existing contents for a clean replacement
+        print(f"Clearing existing raw data files in {output_dir}...")
         for item in output_dir.iterdir():
             if item.is_file():
                 item.unlink()
