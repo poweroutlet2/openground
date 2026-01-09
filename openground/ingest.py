@@ -220,16 +220,12 @@ def ingest_to_lancedb(
     for rec, emb in zip(all_records, embeddings):
         rec["vector"] = emb
 
-    # Save to LanceDB with progress indication
     print(f"Inserting {len(all_records)} chunks into LanceDB...")
     table.add(all_records)
 
-    # Create FTS index
-    print("Creating full-text search index...")
     try:
         table.create_fts_index("content", replace=True)
-        success("Full-text search index created")
     except Exception as exc:  # best-effort; index may already exist
         print(f"FTS index creation skipped: {exc}")
 
-    success(f"Saved {len(all_records)} chunks into lancedb table Lancedb.")
+    success(f"Saved {len(all_records)} chunks into LanceDB.")

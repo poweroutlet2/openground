@@ -132,5 +132,12 @@
         "docs_paths": [
             "src/content/docs"
         ]
+    },
+    "bun": {
+        "type": "git_repo",
+        "repo_url": "https://github.com/oven-sh/bun.git",
+        "docs_paths": [
+            "docs"
+        ]
     }
 }

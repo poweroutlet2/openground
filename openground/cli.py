@@ -31,6 +31,23 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+# Config Sub App
+config_app = typer.Typer(help="Manage openground configuration.")
+app.add_typer(config_app, name="config")
+
+# Nuke Sub App
+nuke_app = typer.Typer(
+    help="Delete all data from raw_data and/or LanceDB.",
+    no_args_is_help=True,
+)
+app.add_typer(nuke_app, name="nuke")
+
+# Stats Sub App
+stats_app = typer.Typer(
+    help="View and manage openground statistics.",
+    no_args_is_help=True,
+)
+app.add_typer(stats_app, name="stats")
 
 @app.callback(invoke_without_command=True)
 def ensure_config_exists(ctx: typer.Context):
@@ -245,6 +262,7 @@ def add(
 
     pages = load_parsed_pages(output_dir)
     ingest_to_lancedb(pages=pages)
+    success(f"Ingested {library} ({version}) into LanceDB.")
 
 
 @app.command()
@@ -881,16 +899,7 @@ def install_cmd(
         print()
 
 
-# Config Sub App
-config_app = typer.Typer(help="Manage openground configuration.")
-app.add_typer(config_app, name="config")
 
-# Nuke Sub App
-nuke_app = typer.Typer(
-    help="Delete all data from raw_data and/or LanceDB.",
-    no_args_is_help=True,
-)
-app.add_typer(nuke_app, name="nuke")
 
 
 @config_app.command("show")
@@ -1178,6 +1187,41 @@ def nuke_embeddings(
         shutil.rmtree(db_path)
         success(f"Deleted LanceDB directory: {db_path}")
         success(f"\nDeleted {embedding_count} embedded libraries.")
+
+
+@stats_app.command("show")
+def stats_show():
+    """Display openground statistics."""
+    from openground.stats import load_stats
+
+    config = get_effective_config()
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+
+    stats = load_stats(db_path=db_path, table_name=table_name)
+
+    print("Openground Statistics")
+    print("=" * 50)
+    print(f"Libraries: {stats['libraries_count']}")
+    print(f"Total chunks: {stats['total_chunks']}")
+    print("\nTool calls:")
+    for tool_name in sorted(stats["tool_calls"].keys()):
+        count = stats["tool_calls"][tool_name]
+        print(f"  {tool_name}: {count}")
+
+
+@stats_app.command("reset")
+def stats_reset(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+):
+    """Clear tool call statistics (reset to zero)."""
+    from openground.stats import reset_stats
+
+    if not yes:
+        typer.confirm("Are you sure you want to clear all tool call statistics?", abort=True)
+
+    reset_stats()
+    success("Statistics cleared. Tool call counts reset to zero.")
 
 
 if __name__ == "__main__":

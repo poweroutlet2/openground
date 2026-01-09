@@ -119,6 +119,13 @@ openground install-mcp --claude-code
 # Claude will search the fastembed docs automatically!
 ```
 
+## MCP Usage Statistics
+To see how many times each tool in the MCP server has been called:
+
+```bash
+openground stats show # show stats
+openground stats clear # reset stats
+```
 ## Development
 
 To contribute or work on openground locally:
