@@ -94,8 +94,8 @@ def add(
     source: Optional[str] = typer.Option(
         None, "--source", "-s", help="Root sitemap URL or Git repo URL to crawl."
     ),
-    version: str = typer.Option(
-        DEFAULT_LIBRARY_VERSION,
+    version: str | None = typer.Option(
+        None,
         "--version",
         "-v",
         help="Version of the library to extract. Only works for git repos. Corresponds to the tag of the version in the git repo. Defaults to latest. Sitemap sources will always use latest.",
