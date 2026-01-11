@@ -1,6 +1,6 @@
 [project]
 name = "openground"
-version = "0.8.4"
+version = "0.8.5"
 description = "Ingest official documentation into a local vector database and expose it via MCP for AI coding agents"
 readme = "README.md"
 license = "MIT"
