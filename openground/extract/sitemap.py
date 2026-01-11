@@ -25,7 +25,7 @@ async def fetch_sitemap_urls(
     session: ClientSession,
     url: str,
     filter_keywords: list[str],
-):
+) -> set[str]:
     print(f"Getting sitemap: {url}")
 
     async with session.get(url) as response:
@@ -34,11 +34,13 @@ async def fetch_sitemap_urls(
     root = ET.fromstring(content)
     namespace = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
-    urls = [loc.text for loc in root.findall(path=".//ns:loc", namespaces=namespace)]
-    print(f"Found {len(urls)} URLs in sitemap")
+    urls = {
+        loc.text for loc in root.findall(path=".//ns:loc", namespaces=namespace) if loc.text
+    }
+    print(f"Found {len(urls)} unique URLs in sitemap")
     keywords = [k.lower() for k in filter_keywords]
     if keywords:
-        urls = [u for u in urls if u and any(k in u.lower() for k in keywords)]
+        urls = {u for u in urls if any(k in u.lower() for k in keywords)}
         print(f"Filtered to {len(urls)} URLs after keyword filtering")
 
     return urls
@@ -63,10 +65,10 @@ async def fetch_robots_txt(session: ClientSession, base_url: str) -> RobotFilePa
 
 
 def filter_urls_by_robots(
-    urls: list[str], robot_parser: RobotFileParser, user_agent: str = "*"
-) -> list[str]:
+    urls: set[str], robot_parser: RobotFileParser, user_agent: str = "*"
+) -> set[str]:
     """Filter URLs that are allowed by robots.txt."""
-    allowed = [url for url in urls if url and robot_parser.can_fetch(user_agent, url)]
+    allowed = {url for url in urls if robot_parser.can_fetch(user_agent, url)}
     return allowed
 
 
@@ -76,7 +78,7 @@ async def process_url(
     url: str,
     library_name: str,
     version: str,
-):
+) -> ParsedPage | None:
     """
     Process a single URL.
 
@@ -110,7 +112,7 @@ async def process_url(
 
 def parse_html(
     url: str, html: str, last_modified: str, library_name: str, version: str
-):
+) -> ParsedPage | None:
     """
     Parse the HTML of a page.
 
@@ -166,7 +168,8 @@ async def extract_pages(
     output_dir: Path | None = None,
     filter_keywords: list[str] = [],
     version: str = "latest",
-):
+    trim_query_params: bool = False,
+) -> None:
     if output_dir is None:
         output_dir = get_library_raw_data_dir(library_name, version=version)
     connector = aiohttp.TCPConnector()
@@ -174,13 +177,23 @@ async def extract_pages(
     async with aiohttp.ClientSession(connector=connector) as session:
         urls = await fetch_sitemap_urls(session, sitemap_url, filter_keywords)
 
+        if trim_query_params:
+            original_count = len(urls)
+            # Trim query parameters and deduplicate using a set comprehension
+            urls = {
+                f"{p.scheme}://{p.netloc}{p.path}"
+                for url in urls
+                if (p := urlparse(url))
+            }
+            if len(urls) < original_count:
+                print(f"Trimmed query parameters: {original_count} -> {len(urls)} unique URLs")
+
         # Filter by robots.txt
         parsed = urlparse(sitemap_url)
         base_url = f"{parsed.scheme}://{parsed.netloc}"
         robot_parser = await fetch_robots_txt(session, base_url)
-        # Filter out None values before robots.txt check
-        valid_urls = [url for url in urls if url is not None]
-        urls = filter_urls_by_robots(valid_urls, robot_parser)
+        
+        urls = filter_urls_by_robots(urls, robot_parser)
         print(f"Filtered to {len(urls)} URLs after robots.txt check")
 
         semaphore = asyncio.Semaphore(concurrency_limit)
@@ -188,7 +201,6 @@ async def extract_pages(
         tasks = [
             process_url(semaphore, session, url, library_name, version)
             for url in urls
-            if url is not None
         ]
 
         # Use tqdm to track async task progress

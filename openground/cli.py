@@ -123,6 +123,11 @@ def add(
         "--sources-file",
         help="Path to a custom sources.json file. If not provided, checks config for 'sources.file_path', then uses default.",
     ),
+    trim_query_params: bool = typer.Option(
+        False,
+        "--trim-query-params",
+        help="Trim query parameters from sitemap URLs to avoid duplicates.",
+    ),
 ):
     """
     Extract documentation from a source (source file, sitemap, or git) and ingest it.
@@ -233,6 +238,7 @@ def add(
                 output_dir=output_dir,
                 filter_keywords=final_filter_keywords,
                 version=version,
+                trim_query_params=trim_query_params,
             )
         elif source_type == "git_repo":
             with console.status("[bold green]"):
@@ -299,6 +305,11 @@ def extract_sitemap(
         help="Maximum number of concurrent requests.",
         min=1,
     ),
+    trim_query_params: bool = typer.Option(
+        False,
+        "--trim-query-params",
+        help="Trim query parameters from sitemap URLs to avoid duplicates.",
+    ),
 ):
     """Run the extraction pipeline to fetch and parse pages from a sitemap."""
 
@@ -320,6 +331,7 @@ def extract_sitemap(
             output_dir=output_dir,
             filter_keywords=filter_keywords,
             version=version,
+            trim_query_params=trim_query_params,
         )
 
     asyncio.run(_run())
