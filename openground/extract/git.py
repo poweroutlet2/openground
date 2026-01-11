@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -8,6 +9,53 @@ import nbformat
 
 from openground.extract.common import ParsedPage, save_results
 from openground.console import success, error
+
+
+def parse_git_web_url(url: str) -> tuple[str, str | None, str | None]:
+    """
+    Parse a GitHub/GitLab web URL into (repo_url, ref, path).
+
+    Supports:
+    - GitHub: https://github.com/owner/repo/tree/ref/path
+    - GitHub: https://github.com/owner/repo/blob/ref/path
+    - GitLab: https://gitlab.com/group/project/-/tree/ref/path
+    - GitLab: https://gitlab.com/group/project/-/blob/ref/path
+
+    Returns:
+        tuple: (repo_url, ref, path)
+    """
+    parsed = urlparse(url)
+    path_parts = parsed.path.strip("/").split("/")
+
+    # Detect GitHub
+    if "github.com" in parsed.netloc:
+        if len(path_parts) >= 4 and path_parts[2] in ("tree", "blob"):
+            owner, repo = path_parts[0], path_parts[1]
+            repo_url = f"https://github.com/{owner}/{repo}.git"
+            ref = path_parts[3]
+            doc_path = "/".join(path_parts[4:]) if len(path_parts) > 4 else None
+            return repo_url, ref, doc_path
+
+    # Detect GitLab
+    elif "gitlab.com" in parsed.netloc:
+        # GitLab URLs often have '-' before tree/blob
+        if "-" in path_parts:
+            dash_index = path_parts.index("-")
+            if (
+                len(path_parts) > dash_index + 2
+                and path_parts[dash_index + 1] in ("tree", "blob")
+            ):
+                project_path = "/".join(path_parts[:dash_index])
+                repo_url = f"https://gitlab.com/{project_path}.git"
+                ref = path_parts[dash_index + 2]
+                doc_path = (
+                    "/".join(path_parts[dash_index + 3 :])
+                    if len(path_parts) > dash_index + 3
+                    else None
+                )
+                return repo_url, ref, doc_path
+
+    return url, None, None
 
 
 def filter_documentation_files(
@@ -121,16 +169,16 @@ def get_default_branch(repo_url: str) -> str:
     return "main"
 
 
-def resolve_tag_name(repo_url: str, version: str) -> str | None:
+def resolve_remote_ref(repo_url: str, version: str) -> str | None:
     """
-    Check which variant of a tag exists on the remote (with/without leading 'v').
-    Makes a single network call to fetch all tags.
+    Check if a ref (tag or branch) exists on the remote.
+    Handles 'v' prefix variants for tags.
 
-    Returns the actual tag name if found, None otherwise.
+    Returns the actual ref name if found, None otherwise.
     """
-    # Get all tags
+    # Get all refs (heads and tags)
     result = subprocess.run(
-        ["git", "ls-remote", "--tags", "--refs", repo_url],
+        ["git", "ls-remote", "--refs", repo_url],
         capture_output=True,
         text=True,
     )
@@ -138,22 +186,27 @@ def resolve_tag_name(repo_url: str, version: str) -> str | None:
     if result.returncode != 0:
         return None
 
-    # Parse tag names from output (format: "hash\trefs/tags/tagname")
-    remote_tags = {
-        line.split("refs/tags/")[-1]
-        for line in result.stdout.splitlines()
-        if "refs/tags/" in line
-    }
+    lines = result.stdout.splitlines()
+    remote_refs = set()
+    for line in lines:
+        if "\trefs/heads/" in line:
+            remote_refs.add(line.split("\t")[-1].replace("refs/heads/", ""))
+        elif "\trefs/tags/" in line:
+            remote_refs.add(line.split("\t")[-1].replace("refs/tags/", ""))
 
-    # Check both variants (with/without 'v')
+    # 1. Check exact match
+    if version in remote_refs:
+        return version
+
+    # 2. Check variants (with/without 'v') for potential tags
     if version.startswith("v"):
-        variants = [version, version[1:]]
+        variants = [version[1:]]
     else:
-        variants = [f"v{version}", version]
+        variants = [f"v{version}"]
 
-    for tag in variants:
-        if tag in remote_tags:
-            return tag
+    for variant in variants:
+        if variant in remote_refs:
+            return variant
 
     return None
 
@@ -180,17 +233,17 @@ async def extract_repo(
         # Detect default branch for URL construction
         default_branch = get_default_branch(repo_url)
 
-        # Resolve the actual tag name if version is provided
+        # Resolve the actual ref name if version is provided
         version_to_store: str
         if version and version != "latest":
-            if (resolved_tag := resolve_tag_name(repo_url, version)) is None:
+            if (resolved_ref := resolve_remote_ref(repo_url, version)) is None:
                 alt_version = version[1:] if version.startswith("v") else f"v{version}"
                 error(
-                    f"Tag '{version}' not found in repository (checked both '{version}' and '{alt_version}')"
+                    f"Ref (tag or branch) '{version}' not found in repository (checked '{version}' and '{alt_version}')"
                 )
                 return
-            ref_to_checkout = resolved_tag
-            version_to_store = resolved_tag
+            ref_to_checkout = resolved_ref
+            version_to_store = resolved_ref
         else:
             ref_to_checkout = default_branch
             version_to_store = "latest"

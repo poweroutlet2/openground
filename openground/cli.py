@@ -192,9 +192,19 @@ def add(
 
     if not source_type:
         # Detect type from URL
-        if final_source.endswith(".git") or any(
+        if any(
             domain in final_source for domain in ["github.com", "gitlab.com"]
         ):
+            from openground.extract.git import parse_git_web_url
+
+            repo_url, ref, doc_path = parse_git_web_url(final_source)
+            if repo_url != final_source:
+                final_source = repo_url
+                if ref and not version:
+                    version = ref
+                if doc_path and not final_docs_paths:
+                    final_docs_paths = [doc_path]
+
             source_type = "git_repo"
             if not final_docs_paths:
                 final_docs_paths = ["/"]
