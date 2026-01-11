@@ -7,6 +7,28 @@ import lancedb
 from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
 from openground.embeddings import generate_embeddings
 
+_db_cache: dict[str, lancedb.DBConnection] = {}
+_table_cache: dict[tuple[str, str], lancedb.table.Table] = {}
+
+
+def _get_db(db_path: Path) -> lancedb.DBConnection:
+    """Get a cached database connection."""
+    path_str = str(db_path)
+    if path_str not in _db_cache:
+        _db_cache[path_str] = lancedb.connect(path_str)
+    return _db_cache[path_str]
+
+
+def _get_table(db_path: Path, table_name: str) -> lancedb.table.Table | None:
+    """Get a cached table handle."""
+    cache_key = (str(db_path), table_name)
+    if cache_key not in _table_cache:
+        db = _get_db(db_path)
+        if table_name not in db.table_names():
+            return None
+        _table_cache[cache_key] = db.open_table(table_name)
+    return _table_cache[cache_key]
+
 
 def _escape_sql_string(value: str) -> str:
     """
@@ -52,11 +74,9 @@ def search(
         top_k: Number of results to return.
         show_progress: Whether to show progress during embedding.
     """
-    db = lancedb.connect(str(db_path))
-    if table_name not in db.table_names():
+    table = _get_table(db_path, table_name)
+    if table is None:
         return "Found 0 matches."
-
-    table = db.open_table(table_name)
 
     query_vec = generate_embeddings([query], show_progress=show_progress)[0]
 
@@ -108,11 +128,11 @@ def list_libraries(
     """
     Return sorted unique non-null library names from the table.
     """
-    db = lancedb.connect(str(db_path))
-    if table_name not in db.table_names():
+    table = _get_table(db_path, table_name)
+    if table is None:
         return []
-    table = db.open_table(table_name)
-    df = table.to_pandas()
+
+    df = table.search().select(["library_name"]).to_pandas()
 
     libraries = df["library_name"].dropna().unique().tolist()
     return sorted(libraries)
@@ -135,13 +155,13 @@ def list_libraries_with_versions(
         Dictionary mapping library names to sorted lists of versions.
         Returns empty dict if no libraries found or table doesn't exist.
     """
-    db = lancedb.connect(str(db_path))
-    if table_name not in db.table_names():
+    table = _get_table(db_path, table_name)
+    if table is None:
         return {}
-    table = db.open_table(table_name)
-    df = table.to_pandas()
 
-    library_version_pairs = df[["library_name", "version"]].dropna()
+    df = table.search().select(["library_name", "version"]).to_pandas()
+
+    library_version_pairs = df.dropna()
 
     # Group by library name and collect unique versions
     result: dict[str, list[str]] = {}
@@ -185,10 +205,9 @@ def get_full_content(
     Returns:
         Formatted markdown string with title, source URL, and full content.
     """
-    db = lancedb.connect(str(db_path))
-    if table_name not in db.table_names():
+    table = _get_table(db_path, table_name)
+    if table is None:
         return f"No content found for URL: {url}"
-    table = db.open_table(table_name)
 
     # Query all chunks for this URL and version
     safe_url = _escape_sql_string(url)
@@ -196,6 +215,7 @@ def get_full_content(
     df = (
         table.search()
         .where(f"url = '{safe_url}' AND version = '{safe_version}'")
+        .select(["title", "content", "chunk_index"])
         .to_pandas()
     )
 
@@ -217,15 +237,16 @@ def get_library_stats(
     table_name: str = DEFAULT_TABLE_NAME,
 ) -> dict | None:
     """Get statistics for a library version (chunk count, unique URLs, etc.)."""
-    db = lancedb.connect(str(db_path))
-    if table_name not in db.table_names():
+    table = _get_table(db_path, table_name)
+    if table is None:
         return None
-    table = db.open_table(table_name)
+
     safe_name = _escape_sql_string(library_name)
     safe_version = _escape_sql_string(version)
     df = (
         table.search()
         .where(f"library_name = '{safe_name}' AND version = '{safe_version}'")
+        .select(["title", "url"])
         .to_pandas()
     )
 
@@ -251,20 +272,17 @@ def delete_library(
     table_name: str = DEFAULT_TABLE_NAME,
 ) -> int:
     """Delete all documents for a library version. Returns count of deleted rows."""
-    db = lancedb.connect(str(db_path))
-    if table_name not in db.table_names():
+    table = _get_table(db_path, table_name)
+    if table is None:
         return 0
-    table = db.open_table(table_name)
+
     safe_name = _escape_sql_string(library_name)
     safe_version = _escape_sql_string(version)
 
     # Get count before deletion
-    df = (
-        table.search()
-        .where(f"library_name = '{safe_name}' AND version = '{safe_version}'")
-        .to_pandas()
+    count = table.count_rows(
+        filter=f"library_name = '{safe_name}' AND version = '{safe_version}'"
     )
-    count = len(df)
 
     # Delete rows
     table.delete(f"library_name = '{safe_name}' AND version = '{safe_version}'")

@@ -1,13 +1,10 @@
 import json
 import tempfile
-from functools import wraps
 from pathlib import Path
 from typing import Any, Callable, TypeVar, TypedDict
 
-import lancedb
-
 from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME, get_data_home
-from openground.query import list_libraries_with_versions
+from openground.query import _get_table, list_libraries_with_versions
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -177,12 +174,10 @@ def get_total_chunks(
     Returns:
         Total number of chunks. Returns 0 if table doesn't exist.
     """
-    db = lancedb.connect(str(db_path))
-    if table_name not in db.table_names():
+    table = _get_table(db_path, table_name)
+    if table is None:
         return 0
-    table = db.open_table(table_name)
-    df = table.to_pandas()
-    return len(df)
+    return table.count_rows()
 
 
 def reset_stats() -> None:

@@ -1,8 +1,38 @@
+import sys
 from collections.abc import Iterable
+from functools import lru_cache
 
 from tqdm import tqdm
 
 from openground.config import get_effective_config
+
+
+@lru_cache(maxsize=1)
+def get_st_model(model_name: str):
+    """Get a cached instance of SentenceTransformer."""
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(model_name)
+
+
+@lru_cache(maxsize=1)
+def get_fastembed_model(model_name: str, use_cuda: bool = True):
+    """Get a cached instance of TextEmbedding (fastembed)."""
+    from fastembed import TextEmbedding  # type: ignore
+
+    if use_cuda:
+        try:
+            return TextEmbedding(
+                model_name=model_name,
+                providers=["CUDAExecutionProvider"],
+            )
+        except ValueError:
+            print("CUDA not available, using CPU instead.", file=sys.stderr)
+
+    return TextEmbedding(
+        model_name=model_name,
+        providers=["CPUExecutionProvider"],
+    )
 
 
 def get_device() -> str:
@@ -29,12 +59,10 @@ def _generate_embeddings_sentence_transformers(
     Returns:
         List of embedding vectors (each as a list of floats).
     """
-    from sentence_transformers import SentenceTransformer
-
     config = get_effective_config()
     batch_size = config["embeddings"]["batch_size"]
     model_name = config["embeddings"]["embedding_model"]
-    model = SentenceTransformer(model_name)
+    model = get_st_model(model_name)
 
     texts_list = list(texts)
     all_embeddings = []
@@ -76,8 +104,6 @@ def _generate_embeddings_fastembed(
     Returns:
         List of embedding vectors (each as a list of floats).
     """
-    from fastembed import TextEmbedding
-
     config = get_effective_config()
     batch_size = config["embeddings"]["batch_size"]
     model_name = config["embeddings"]["embedding_model"]
@@ -85,22 +111,7 @@ def _generate_embeddings_fastembed(
     texts_list = list(texts)
     all_embeddings = []
 
-    try:
-        model = TextEmbedding(
-            model_name=model_name,
-            providers=[
-                # "TensorrtExecutionProvider",
-                "CUDAExecutionProvider",
-            ],
-        )
-    except ValueError:
-        print("CUDA not available, using CPU instead.")
-        model = TextEmbedding(
-            model_name=model_name,
-            providers=[
-                "CPUExecutionProvider",
-            ],
-        )
+    model = get_fastembed_model(model_name)
 
     with tqdm(
         total=len(texts_list),

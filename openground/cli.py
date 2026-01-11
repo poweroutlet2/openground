@@ -326,7 +326,7 @@ def extract_sitemap(
     async def _run():
         await extract_pages(
             sitemap_url=sitemap_url,
-            concurrency_limit=concurrency_limit,  # type: ignore
+            concurrency_limit=concurrency_limit,
             library_name=library,
             output_dir=output_dir,
             filter_keywords=filter_keywords,
@@ -446,7 +446,7 @@ def query_cmd(
         db_path=db_path,
         table_name=table_name,
         library_name=library,
-        top_k=top_k,  # type: ignore
+        top_k=top_k,
     )
     print(results_md)
 
@@ -455,7 +455,11 @@ def query_cmd(
 @app.command("ls")
 def list_libraries_cmd():
     """List available libraries and their versions stored in the local db."""
-    from openground.query import list_libraries_with_versions
+    from rich.console import Console
+
+    console = Console()
+    with console.status("[bold green]"):
+        from openground.query import list_libraries_with_versions
 
     # Get config
     config = get_effective_config()
