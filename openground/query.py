@@ -37,6 +37,7 @@ def search(
     table_name: str = DEFAULT_TABLE_NAME,
     library_name: Optional[str] = None,
     top_k: int = 10,
+    show_progress: bool = True,
 ) -> str:
     """
     Run a hybrid search (semantic + BM25) against the LanceDB table and return a
@@ -49,6 +50,7 @@ def search(
         table_name: Table name to search.
         library_name: Optional filter on library name column.
         top_k: Number of results to return.
+        show_progress: Whether to show progress during embedding.
     """
     db = lancedb.connect(str(db_path))
     if table_name not in db.table_names():
@@ -56,7 +58,7 @@ def search(
 
     table = db.open_table(table_name)
 
-    query_vec = generate_embeddings([query])[0]
+    query_vec = generate_embeddings([query], show_progress=show_progress)[0]
 
     search_builder = table.search(query_type="hybrid").text(query).vector(query_vec)
 

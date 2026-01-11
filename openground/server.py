@@ -78,6 +78,7 @@ def search_documents_tool(
         table_name=table_name,
         library_name=library_name,
         top_k=config["query"]["top_k"],
+        show_progress=False,
     )
 
 
