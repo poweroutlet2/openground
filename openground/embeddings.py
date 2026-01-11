@@ -18,7 +18,7 @@ def get_st_model(model_name: str):
 @lru_cache(maxsize=1)
 def get_fastembed_model(model_name: str, use_cuda: bool = True):
     """Get a cached instance of TextEmbedding (fastembed)."""
-    from fastembed import TextEmbedding 
+    from fastembed import TextEmbedding  # type: ignore
 
     if use_cuda:
         try:

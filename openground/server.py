@@ -1,4 +1,7 @@
 import os
+import sys
+import threading
+import time
 
 # Silence stdout pollution from dependencies
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -39,6 +42,31 @@ def _get_config():
     return _config
 
 
+def _pre_load_resources():
+    """Warm up caches and pre-load embedding models in the background."""
+    start_time = time.time()
+    sys.stderr.write("[info] Background initialization started...\n")
+    try:
+        config = _get_config()
+        db_path = Path(config["db_path"]).expanduser()
+        table_name = config["table_name"]
+
+        # Warm up metadata cache
+        list_libraries_with_versions(db_path=db_path, table_name=table_name)
+
+        # Warm up embedding model
+        from openground.embeddings import generate_embeddings
+
+        generate_embeddings(["warmup"], show_progress=False)
+        
+        duration = time.time() - start_time
+        sys.stderr.write(f"[info] Background initialization complete (took {duration:.2f}s). Server is fully ready.\n")
+    except Exception as e:
+        # Background tasks should never crash the server
+        sys.stderr.write(f"[error] Background initialization failed: {e}\n")
+        pass
+
+
 @mcp.tool
 def search_documents_tool(
     query: str,
@@ -59,7 +87,7 @@ def search_documents_tool(
     db_path = Path(config["db_path"]).expanduser()
     table_name = config["table_name"]
 
-    # Validate that library and version exist
+    # Validate that library and version exist (uses cache if warmed up)
     available_libraries = list_libraries_with_versions(
         db_path=db_path,
         table_name=table_name,
@@ -132,6 +160,8 @@ def get_full_content_tool(url: str, version: str) -> str:
 
 def run_server():
     """Entry point for the MCP server."""
+    threading.Thread(target=_pre_load_resources, daemon=True).start()
+
     mcp.run(transport="stdio")
 
 

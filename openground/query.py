@@ -1,26 +1,31 @@
 import json
 from pathlib import Path
-from typing import Optional, Any
+from typing import Optional, Any, TYPE_CHECKING
 
-import lancedb
+if TYPE_CHECKING:
+    import lancedb
+    import lancedb.table
 
 from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
 from openground.embeddings import generate_embeddings
 
-_db_cache: dict[str, lancedb.DBConnection] = {}
-_table_cache: dict[tuple[str, str], lancedb.table.Table] = {}
+# Caches for database connection and table
+_db_cache: dict[str, Any] = {}
+_table_cache: dict[tuple[str, str], Any] = {}
 _metadata_cache: dict[tuple[str, str], dict[str, Any]] = {}
 
 
-def _get_db(db_path: Path) -> lancedb.DBConnection:
+def _get_db(db_path: Path) -> "lancedb.DBConnection":
     """Get a cached database connection."""
+    import lancedb
+
     path_str = str(db_path)
     if path_str not in _db_cache:
         _db_cache[path_str] = lancedb.connect(path_str)
     return _db_cache[path_str]
 
 
-def _get_table(db_path: Path, table_name: str) -> lancedb.table.Table | None:
+def _get_table(db_path: Path, table_name: str) -> Optional["lancedb.table.Table"]:
     """Get a cached table handle."""
     cache_key = (str(db_path), table_name)
     if cache_key not in _table_cache:
@@ -266,7 +271,7 @@ def get_library_stats(
         table.search()
         .where(filter_str)
         .select(["title", "url"])
-        .limit(500)  # Sufficient for sampling
+        .limit(500) 
         .to_pandas()
     )
 
