@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 import lancedb
 
@@ -9,6 +9,7 @@ from openground.embeddings import generate_embeddings
 
 _db_cache: dict[str, lancedb.DBConnection] = {}
 _table_cache: dict[tuple[str, str], lancedb.table.Table] = {}
+_metadata_cache: dict[tuple[str, str], dict[str, Any]] = {}
 
 
 def _get_db(db_path: Path) -> lancedb.DBConnection:
@@ -28,6 +29,13 @@ def _get_table(db_path: Path, table_name: str) -> lancedb.table.Table | None:
             return None
         _table_cache[cache_key] = db.open_table(table_name)
     return _table_cache[cache_key]
+
+
+def clear_query_caches():
+    """Clear all query-related caches."""
+    _db_cache.clear()
+    _table_cache.clear()
+    _metadata_cache.clear()
 
 
 def _escape_sql_string(value: str) -> str:
@@ -128,14 +136,10 @@ def list_libraries(
     """
     Return sorted unique non-null library names from the table.
     """
-    table = _get_table(db_path, table_name)
-    if table is None:
-        return []
-
-    df = table.search().select(["library_name"]).to_pandas()
-
-    libraries = df["library_name"].dropna().unique().tolist()
-    return sorted(libraries)
+    libs_with_versions = list_libraries_with_versions(
+        db_path=db_path, table_name=table_name
+    )
+    return sorted(libs_with_versions.keys())
 
 
 def list_libraries_with_versions(
@@ -155,26 +159,32 @@ def list_libraries_with_versions(
         Dictionary mapping library names to sorted lists of versions.
         Returns empty dict if no libraries found or table doesn't exist.
     """
-    table = _get_table(db_path, table_name)
-    if table is None:
-        return {}
+    cache_key = (str(db_path), table_name)
+    if cache_key in _metadata_cache:
+        result = _metadata_cache[cache_key]
+    else:
+        table = _get_table(db_path, table_name)
+        if table is None:
+            return {}
 
-    df = table.search().select(["library_name", "version"]).to_pandas()
+        # Load unique pairs efficiently
+        df = table.search().select(["library_name", "version"]).to_pandas().drop_duplicates().dropna()
+        
+        # Group by library name and collect unique versions
+        result = {}
+        for _, row in df.iterrows():
+            lib_name = row["library_name"]
+            version = row["version"]
+            if lib_name not in result:
+                result[lib_name] = []
+            if version not in result[lib_name]:
+                result[lib_name].append(version)
 
-    library_version_pairs = df.dropna()
+        for lib_name in result:
+            result[lib_name] = sorted(result[lib_name])
 
-    # Group by library name and collect unique versions
-    result: dict[str, list[str]] = {}
-    for _, row in library_version_pairs.iterrows():
-        lib_name = row["library_name"]
-        version = row["version"]
-        if lib_name not in result:
-            result[lib_name] = []
-        if version not in result[lib_name]:
-            result[lib_name].append(version)
-
-    for lib_name in result:
-        result[lib_name] = sorted(result[lib_name])
+        # Cache the full results
+        _metadata_cache[cache_key] = result
 
     if search_term:
         term_lower = search_term.lower()
@@ -243,24 +253,49 @@ def get_library_stats(
 
     safe_name = _escape_sql_string(library_name)
     safe_version = _escape_sql_string(version)
-    df = (
+    filter_str = f"library_name = '{safe_name}' AND version = '{safe_version}'"
+
+    # Use count_rows for chunk count
+    chunk_count = table.count_rows(filter=filter_str)
+    if chunk_count == 0:
+        return None
+
+    # Get sample titles and unique URL count more efficiently
+    # We only need a few titles, so we can limit the search
+    df_titles = (
         table.search()
-        .where(f"library_name = '{safe_name}' AND version = '{safe_version}'")
+        .where(filter_str)
         .select(["title", "url"])
+        .limit(500)  # Sufficient for sampling
         .to_pandas()
     )
 
-    if df.empty:
-        return None
+    titles = [t for t in df_titles["title"].unique().tolist() if t and str(t).strip()][
+        :5
+    ]
 
-    # Get unique titles, filter out None/empty, and take first 5
-    titles = [t for t in df["title"].unique().tolist() if t and str(t).strip()][:5]
+    # For unique URLs, we'll use the sampled data as a hint, or just use nunique() 
+    # if we have all data. Since we limited to 500 above for titles, let's do a 
+    # separate quick check for unique URLs if possible, or just use the count from 
+    # a slightly larger sample.
+    unique_urls = df_titles["url"].nunique()
+    if chunk_count > 500:
+        # If there are more chunks, unique_urls might be higher than our sample
+        # For now, we'll just note it's at least this many, or we can load all URLs
+        # which is usually okay as URLs are small strings.
+        df_all_urls = (
+            table.search()
+            .where(filter_str)
+            .select(["url"])
+            .to_pandas()
+        )
+        unique_urls = df_all_urls["url"].nunique()
 
     return {
         "library_name": library_name,
         "version": version,
-        "chunk_count": len(df),
-        "unique_urls": df["url"].nunique(),
+        "chunk_count": chunk_count,
+        "unique_urls": unique_urls,
         "titles": titles,
     }
 

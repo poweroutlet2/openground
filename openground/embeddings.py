@@ -18,7 +18,7 @@ def get_st_model(model_name: str):
 @lru_cache(maxsize=1)
 def get_fastembed_model(model_name: str, use_cuda: bool = True):
     """Get a cached instance of TextEmbedding (fastembed)."""
-    from fastembed import TextEmbedding  # type: ignore
+    from fastembed import TextEmbedding 
 
     if use_cuda:
         try:
@@ -73,6 +73,7 @@ def _generate_embeddings_sentence_transformers(
         unit="text",
         unit_scale=True,
         disable=(not show_progress),
+        file=sys.stderr,
     ) as pbar:
         for i in range(0, len(texts_list), batch_size):
             batch = texts_list[i : i + batch_size]
@@ -119,6 +120,7 @@ def _generate_embeddings_fastembed(
         unit="text",
         unit_scale=True,
         disable=not show_progress,
+        file=sys.stderr,
     ) as pbar:
         # fastembed processes in batches internally, but we can control batching
         for i in range(0, len(texts_list), batch_size):

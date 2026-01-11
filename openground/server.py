@@ -1,3 +1,10 @@
+import os
+
+# Silence stdout pollution from dependencies
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+os.environ["FAST_EMBED_IGNORE_TRANSFORMERS_LOGS"] = "1"
+
 from pathlib import Path
 
 from fastmcp import FastMCP
