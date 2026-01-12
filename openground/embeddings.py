@@ -10,7 +10,13 @@ from openground.config import get_effective_config
 @lru_cache(maxsize=1)
 def get_st_model(model_name: str):
     """Get a cached instance of SentenceTransformer."""
-    from sentence_transformers import SentenceTransformer
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError:
+        raise ImportError(
+            "The 'sentence-transformers' backend is not installed. "
+            "Please install it with: pip install 'openground[sentence-transformers]'"
+        ) from None
 
     return SentenceTransformer(model_name)
 
@@ -18,7 +24,13 @@ def get_st_model(model_name: str):
 @lru_cache(maxsize=1)
 def get_fastembed_model(model_name: str, use_cuda: bool = True):
     """Get a cached instance of TextEmbedding (fastembed)."""
-    from fastembed import TextEmbedding  # type: ignore
+    try:
+        from fastembed import TextEmbedding 
+    except ImportError:
+        raise ImportError(
+            "The 'fastembed' backend is not installed. "
+            "Please install it with: pip install fastembed"
+        ) from None
 
     if use_cuda:
         try:
@@ -33,17 +45,6 @@ def get_fastembed_model(model_name: str, use_cuda: bool = True):
         model_name=model_name,
         providers=["CPUExecutionProvider"],
     )
-
-
-def get_device() -> str:
-    """Detect available hardware device (CUDA, MPS, or CPU)."""
-    import torch
-
-    if torch.cuda.is_available():
-        return "cuda"
-    if torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
 
 
 def _generate_embeddings_sentence_transformers(
