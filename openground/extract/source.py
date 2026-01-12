@@ -24,6 +24,12 @@ def get_source_file_path(custom_path: Path | None = None) -> Path:
     if custom_path is not None:
         return Path(custom_path).expanduser()
 
+    # Check for local sources file first
+    from openground.config import DEFAULT_LOCAL_SOURCE_FILE
+
+    if DEFAULT_LOCAL_SOURCE_FILE.exists():
+        return DEFAULT_LOCAL_SOURCE_FILE
+
     # Try looking in the same directory as this file first (if installed as package)
     pkg_source_file = Path(__file__).parent / "sources.json"
     if pkg_source_file.exists():
@@ -35,6 +41,32 @@ def get_source_file_path(custom_path: Path | None = None) -> Path:
         return root_source_file
 
     return pkg_source_file
+
+
+def save_source_to_local(library_name: str, config: LibrarySource) -> None:
+    """Save a library source configuration to the local .openground/sources.json file.
+
+    Args:
+        library_name: Name of the library.
+        config: Source configuration to save.
+    """
+    from openground.config import DEFAULT_LOCAL_SOURCE_FILE
+
+    DEFAULT_LOCAL_SOURCE_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+    sources = {}
+    if DEFAULT_LOCAL_SOURCE_FILE.exists():
+        with open(DEFAULT_LOCAL_SOURCE_FILE, "r", encoding="utf-8") as f:
+            try:
+                sources = json.load(f)
+            except json.JSONDecodeError:
+                # If file is invalid, start fresh
+                sources = {}
+
+    sources[library_name] = config
+
+    with open(DEFAULT_LOCAL_SOURCE_FILE, "w", encoding="utf-8") as f:
+        json.dump(sources, f, indent=2, ensure_ascii=False)
 
 
 def load_source_file(custom_path: Path | None = None) -> dict[str, LibrarySource]:

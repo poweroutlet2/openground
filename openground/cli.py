@@ -280,6 +280,29 @@ def add(
     ingest_to_lancedb(pages=pages)
     success(f"Ingested {library} ({version}) into LanceDB.")
 
+    # Auto-add to local sources.json if configured and source was provided manually
+    if source and config.get("sources", {}).get("auto_add_local", True):
+        from openground.extract.source import save_source_to_local, LibrarySource
+
+        new_source_config: LibrarySource = {
+            "type": source_type,  # type: ignore
+        }
+        if source_type == "sitemap":
+            new_source_config["sitemap_url"] = final_source
+            if final_filter_keywords:
+                new_source_config["filter_keywords"] = final_filter_keywords
+        elif source_type == "git_repo":
+            new_source_config["repo_url"] = final_source
+            if final_docs_paths:
+                new_source_config["docs_paths"] = final_docs_paths
+
+        save_source_to_local(library, new_source_config)
+        success(f"Added source for '{library}' to local .openground/sources.json")
+        hint(
+            "Tip: Disable automatic addition to local sources  by running:\n"
+            "  openground config set sources.auto_add_local false"
+        )
+
 
 @app.command()
 def extract_sitemap(
@@ -320,13 +343,16 @@ def extract_sitemap(
     if concurrency_limit is None:
         concurrency_limit = config["extraction"]["concurrency_limit"]
 
+    # Ensure concurrency_limit is an int for the type checker
+    limit: int = concurrency_limit  # type: ignore
+
     version = "latest"
     output_dir = get_library_raw_data_dir(library, version=version)
 
     async def _run():
         await extract_pages(
             sitemap_url=sitemap_url,
-            concurrency_limit=concurrency_limit,
+            concurrency_limit=limit,
             library_name=library,
             output_dir=output_dir,
             filter_keywords=filter_keywords,
@@ -440,13 +466,16 @@ def query_cmd(
     if top_k is None:
         top_k = config["query"]["top_k"]
 
+    # Ensure top_k is an int for the type checker
+    k: int = top_k  # type: ignore
+
     results_md = search(
         query=query,
         version=version,
         db_path=db_path,
         table_name=table_name,
         library_name=library,
-        top_k=top_k,
+        top_k=k,
     )
     print(results_md)
 

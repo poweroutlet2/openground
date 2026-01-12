@@ -31,6 +31,7 @@ CONCURRENCY_LIMIT = 50
 
 
 DEFAULT_RAW_DATA_DIR_BASE = get_data_home() / "raw_data"
+DEFAULT_LOCAL_SOURCE_FILE = Path(".openground") / "sources.json"
 
 
 def get_library_raw_data_dir(library_name: str, version: str) -> Path:
@@ -55,7 +56,7 @@ DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_LIBRARY_VERSION = "latest"
 DEFAULT_EMBEDDING_DIMENSIONS = 384
 # fastembed or sentence-transformers
-DEFAULT_EMBEDDING_BACKEND = "sentence-transformers"
+DEFAULT_EMBEDDING_BACKEND = "fastembed"
 
 # Default values for embeddings parameters
 DEFAULT_BATCH_SIZE = 32
@@ -157,6 +158,9 @@ def get_default_config() -> dict[str, Any]:
         "query": {
             "top_k": DEFAULT_TOP_K,
         },
+        "sources": {
+            "auto_add_local": True,
+        },
     }
 
 
@@ -191,6 +195,13 @@ def _merge_with_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
                 "Config key 'query' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
             )
         merged["query"].update(user_config["query"])
+
+    if "sources" in user_config:
+        if not isinstance(user_config["sources"], dict):
+            raise ValueError(
+                "Config key 'sources' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
+            )
+        merged["sources"].update(user_config["sources"])
 
     return merged
 

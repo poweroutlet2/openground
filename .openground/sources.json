@@ -1,0 +1,9 @@
+{
+  "wxt": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/qdrant/fastembed.git",
+    "docs_paths": [
+      "docs"
+    ]
+  }
+}
