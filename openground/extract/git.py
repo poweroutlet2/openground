@@ -1,5 +1,4 @@
 import os
-import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -8,7 +7,7 @@ from urllib.parse import urlparse
 import nbformat
 
 from openground.extract.common import ParsedPage, save_results
-from openground.console import success, error
+from openground.console import error
 
 
 def parse_git_web_url(url: str) -> tuple[str, str | None, str | None]:
@@ -264,7 +263,7 @@ async def extract_repo(
             str(temp_path),
         ]
 
-        result = subprocess.run(clone_cmd, capture_output=False, text=True)
+        result = subprocess.run(clone_cmd, capture_output=True, text=True)
         if result.returncode != 0:
             error(f"Failed to clone repository: {result.stderr}")
             return
@@ -285,21 +284,37 @@ async def extract_repo(
 
         print(f"Setting sparse-checkout to: {', '.join(git_docs_paths)}")
 
-        subprocess.run(
-            ["git", "sparse-checkout", "init", "--cone"],
-            cwd=temp_path,
-            check=True,
-            capture_output=False,
-        )
-        subprocess.run(
-            ["git", "sparse-checkout", "set"] + git_docs_paths,
-            cwd=temp_path,
-            check=True,
-            capture_output=False,
-        )
+        try:
+            subprocess.run(
+                ["git", "sparse-checkout", "init", "--cone"],
+                cwd=temp_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "sparse-checkout", "set"] + git_docs_paths,
+                cwd=temp_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            error(f"Failed to set sparse-checkout: {e.stderr}")
+            return
 
         print("Checking out files...")
-        subprocess.run(["git", "checkout"], cwd=temp_path, check=True)
+        try:
+            subprocess.run(
+                ["git", "checkout"],
+                cwd=temp_path,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            error(f"Failed to checkout files: {e.stderr}")
+            return
 
         # Process files
         results: list[ParsedPage | None] = []
@@ -370,4 +385,3 @@ async def extract_repo(
 
         print(f"Found {len(results)} valid documentation pages. Saving...")
         await save_results(results, output_dir)
-        success(f"Successfully extracted {len(results)} files to {output_dir}")

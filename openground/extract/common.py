@@ -38,7 +38,7 @@ async def save_results(results: list[ParsedPage | None], output_dir: Path):
     valid_results = [r for r in results if r is not None]
 
     for result in tqdm(
-        valid_results, desc="Writing structured raw data files:", unit="file"
+        valid_results, desc="Writing structured raw data files", unit="file"
     ):
         slug = urlparse(result["url"]).path.strip("/").replace("/", "-") or "home"
         file_name = output_dir / f"{slug}.json"

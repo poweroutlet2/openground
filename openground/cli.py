@@ -149,14 +149,14 @@ def add(
     elif "sources" in config and "file_path" in config["sources"]:
         sources_file_path = Path(config["sources"]["file_path"]).expanduser()
 
-    # Resolve configuration from source file if possible
-    source_config = get_library_config(library, custom_path=sources_file_path)
+    # Resolve configuration from source file if possible (only if source is not provided)
+    source_config, actual_sources_path = None, None
+    if not source:
+        source_config, actual_sources_path = get_library_config(library, custom_path=sources_file_path)
 
     # Print which sources file is being used if a config was found
-    if source_config:
-        actual_sources_path = get_source_file_path(custom_path=sources_file_path)
-        if actual_sources_path.exists():
-            hint(f"Using sources file: {actual_sources_path}")
+    if source_config and actual_sources_path:
+        hint(f"Using sources file: {actual_sources_path}")
     source_type = None
     final_source = source
     final_docs_paths = docs_paths

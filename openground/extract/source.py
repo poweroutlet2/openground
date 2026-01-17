@@ -88,15 +88,43 @@ def load_source_file(custom_path: Path | None = None) -> dict[str, LibrarySource
 
 def get_library_config(
     name: str, custom_path: Path | None = None
-) -> LibrarySource | None:
-    """Get the configuration for a specific library by name.
+) -> tuple[LibrarySource | None, Path | None]:
+    """Get the configuration for a specific library by name by searching multiple sources.
 
     Args:
         name: Name of the library to get configuration for.
-        custom_path: Optional custom path to sources.json file. If provided, this path is used.
+        custom_path: Optional custom path to sources.json file. If provided, this path is searched first.
 
     Returns:
-        Library source configuration if found, None otherwise.
+        A tuple of (Library source configuration if found, Path to the file where it was found).
+        Both are None if not found.
     """
-    source_file = load_source_file(custom_path)
-    return source_file.get(name)
+    paths_to_check: list[Path] = []
+    
+    # 1. Custom path if provided
+    if custom_path:
+        paths_to_check.append(Path(custom_path).expanduser())
+
+    # 2. Local sources file
+    from openground.config import DEFAULT_LOCAL_SOURCE_FILE
+    paths_to_check.append(DEFAULT_LOCAL_SOURCE_FILE)
+
+    # 3. Package level sources file
+    pkg_source_file = Path(__file__).parent / "sources.json"
+    paths_to_check.append(pkg_source_file)
+
+    # 4. Project root sources file (for development)
+    root_source_file = Path(__file__).parent.parent / "sources.json"
+    paths_to_check.append(root_source_file)
+
+    for path in paths_to_check:
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                try:
+                    sources = json.load(f)
+                    if name in sources:
+                        return sources[name], path
+                except (json.JSONDecodeError, PermissionError):
+                    continue
+
+    return None, None
