@@ -41,7 +41,9 @@ openground is an on-device RAG system that extracts documentation from git repos
 Recommended to install with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv tool install openground
+uv tool install openground # CPU support 
+uv tool install 'openground[fastembed-gpu]' # CUDA/GPU support
+uv tool install 'openground[sentence-transformers]' # Larger package size, automatic GPU/MPS support
 ```
 
 or
@@ -106,7 +108,7 @@ Here's how to add the fastembed documentation and make it available to Claude Co
 
 ```bash
 # 1. Install openground
-uv tool install openground
+uv tool install 'openground[fastembed-gpu]'
 
 # 2. Add fastembed to openground
 openground add fastembed --source https://github.com/qdrant/fastembed.git --docs-path docs/ --version v0.7.4 -y
