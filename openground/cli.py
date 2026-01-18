@@ -49,6 +49,7 @@ stats_app = typer.Typer(
 )
 app.add_typer(stats_app, name="stats")
 
+
 @app.callback(invoke_without_command=True)
 def ensure_config_exists(ctx: typer.Context):
     """Ensure config file exists before running any command."""
@@ -152,7 +153,9 @@ def add(
     # Resolve configuration from source file if possible (only if source is not provided)
     source_config, actual_sources_path = None, None
     if not source:
-        source_config, actual_sources_path = get_library_config(library, custom_path=sources_file_path)
+        source_config, actual_sources_path = get_library_config(
+            library, custom_path=sources_file_path
+        )
 
     # Print which sources file is being used if a config was found
     if source_config and actual_sources_path:
@@ -197,9 +200,7 @@ def add(
 
     if not source_type:
         # Detect type from URL
-        if any(
-            domain in final_source for domain in ["github.com", "gitlab.com"]
-        ):
+        if any(domain in final_source for domain in ["github.com", "gitlab.com"]):
             from openground.extract.git import parse_git_web_url
 
             repo_url, ref, doc_path = parse_git_web_url(final_source)
@@ -954,9 +955,6 @@ def install_cmd(
         print()
 
 
-
-
-
 @config_app.command("show")
 def config_show(
     defaults: bool = typer.Option(
@@ -1205,7 +1203,7 @@ def nuke_embeddings(
 ):
     """Delete all files in the LanceDB directory."""
     import shutil
-    from openground.query import list_libraries
+    from openground.query import list_libraries, clear_query_caches
 
     config = get_effective_config()
     db_path = Path(config["db_path"]).expanduser()
@@ -1240,6 +1238,7 @@ def nuke_embeddings(
     # Delete db_path
     if db_path.exists():
         shutil.rmtree(db_path)
+        clear_query_caches()
         success(f"Deleted LanceDB directory: {db_path}")
         success(f"\nDeleted {embedding_count} embedded libraries.")
 
@@ -1273,7 +1272,9 @@ def stats_reset(
     from openground.stats import reset_stats
 
     if not yes:
-        typer.confirm("Are you sure you want to clear all tool call statistics?", abort=True)
+        typer.confirm(
+            "Are you sure you want to clear all tool call statistics?", abort=True
+        )
 
     reset_stats()
     success("Statistics cleared. Tool call counts reset to zero.")
