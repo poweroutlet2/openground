@@ -1,6 +1,6 @@
 [project]
 name = "openground"
-version = "0.10.1"
+version = "0.10.2"
 description = "Ingest official documentation into a local vector database and expose it via MCP for AI coding agents"
 readme = "README.md"
 license = "MIT"
@@ -39,15 +39,13 @@ dependencies = [
     "pandas>=2.3.3,<3.0.0",
     "rich>=14.0.0,<15.0.0",
     "nbformat>=5.0.0,<6.0.0",
-    "fastembed>=0.2.0,<1.0.0; extra != 'fastembed-gpu'",
-]
-
-[project.optional-dependencies]
-fastembed-gpu = ["fastembed-gpu>=0.2.0,<1.0.0"]
-sentence-transformers = [
     "sentence-transformers>=5.0.0,<6.0.0",
     "torch>=2.0.0,<3.0.0",
 ]
+
+[project.optional-dependencies]
+fastembed-cpu = ["fastembed>=0.2.0,<1.0.0"]
+fastembed-gpu = ["fastembed-gpu>=0.2.0,<1.0.0"]
 
 [dependency-groups]
 dev = [
