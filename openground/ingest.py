@@ -206,8 +206,6 @@ def ingest_to_lancedb(
     for page in tqdm(pages, desc="Chunking documents", unit="page"):
         all_records.extend(chunk_document(page))
 
-    print(f"Prepared {len(all_records)} chunks from {len(pages)} pages.")
-
     if not all_records:
         print("No chunks produced; skipping ingestion.")
         return
@@ -227,5 +225,3 @@ def ingest_to_lancedb(
         table.create_fts_index("content", replace=True)
     except Exception as exc:  # best-effort; index may already exist
         print(f"FTS index creation skipped: {exc}")
-
-    success(f"Saved {len(all_records)} chunks into LanceDB.")

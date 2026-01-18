@@ -275,11 +275,9 @@ def add(
             error("\nCancelled by user.")
             raise typer.Abort()
 
-    print("\nStarting embedding...")
-
     pages = load_parsed_pages(output_dir)
     ingest_to_lancedb(pages=pages)
-    success(f"Ingested {library} ({version}) into LanceDB.")
+    success(f"Embedding complete: Library {library} ({version}) added to LanceDB.")
 
     # Auto-add to local sources.json if configured and source was provided manually
     if source and config.get("sources", {}).get("auto_add_local", True):
@@ -595,6 +593,22 @@ def remove_library_cmd(
 def _install_to_claude_code() -> None:
     """Install openground to Claude Code using the claude CLI."""
     try:
+        # First, remove any existing openground MCP config to ensure clean install
+        print("Removing existing openground MCP config if it exists...")
+        remove_cmd = [
+            "claude",
+            "mcp",
+            "remove",
+            "openground",
+            "--scope",
+            "user",
+        ]
+        subprocess.run(
+            remove_cmd,
+            capture_output=True,
+            check=False,
+        )
+
         # Build the command - uses the openground-mcp entry point
         cmd = [
             "claude",
@@ -1090,12 +1104,37 @@ def config_reset(
     print("   All settings will use defaults.")
 
 
+def _delete_directory_with_cache(
+    path: Path, item_type: str, clear_caches: bool = False
+) -> bool:
+    """
+    Delete a directory with optional cache clearing.
+
+    Args:
+        path: Directory path to delete
+        item_type: Type of item for success message (e.g., "LanceDB directory", "raw data directory")
+        clear_caches: If True, clear query caches after deletion
+
+    Returns:
+        True if directory was deleted, False if it didn't exist
+    """
+    import shutil
+    from openground.query import clear_query_caches
+
+    if path.exists():
+        shutil.rmtree(path)
+        if clear_caches:
+            clear_query_caches()
+        success(f"Deleted {item_type}: {path}")
+        return True
+    return False
+
+
 @nuke_app.command("all")
 def nuke_all(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ):
     """Delete all files in both raw_data and LanceDB directories."""
-    import shutil
     from openground.query import list_libraries
 
     config = get_effective_config()
@@ -1141,14 +1180,10 @@ def nuke_all(
         )
 
     # Delete raw_data
-    if raw_data_dir.exists():
-        shutil.rmtree(raw_data_dir)
-        success(f"Deleted raw data directory: {raw_data_dir}")
+    _delete_directory_with_cache(raw_data_dir, "raw data directory")
 
     # Delete db_path
-    if db_path.exists():
-        shutil.rmtree(db_path)
-        success(f"Deleted LanceDB directory: {db_path}")
+    _delete_directory_with_cache(db_path, "LanceDB directory", clear_caches=True)
 
     if raw_count > 0 or embedding_count > 0:
         success(
@@ -1161,8 +1196,6 @@ def nuke_raw_data(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ):
     """Delete all files in the raw_data directory."""
-    import shutil
-
     config = get_effective_config()
     raw_data_dir = Path(config["raw_data_dir"]).expanduser()
 
@@ -1191,9 +1224,7 @@ def nuke_raw_data(
         )
 
     # Delete raw_data
-    if raw_data_dir.exists():
-        shutil.rmtree(raw_data_dir)
-        success(f"Deleted raw data directory: {raw_data_dir}")
+    if _delete_directory_with_cache(raw_data_dir, "raw data directory"):
         success(f"\nDeleted {raw_count} raw libraries.")
 
 
@@ -1202,8 +1233,7 @@ def nuke_embeddings(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
 ):
     """Delete all files in the LanceDB directory."""
-    import shutil
-    from openground.query import list_libraries, clear_query_caches
+    from openground.query import list_libraries
 
     config = get_effective_config()
     db_path = Path(config["db_path"]).expanduser()
@@ -1236,10 +1266,7 @@ def nuke_embeddings(
         )
 
     # Delete db_path
-    if db_path.exists():
-        shutil.rmtree(db_path)
-        clear_query_caches()
-        success(f"Deleted LanceDB directory: {db_path}")
+    if _delete_directory_with_cache(db_path, "LanceDB directory", clear_caches=True):
         success(f"\nDeleted {embedding_count} embedded libraries.")
 
 

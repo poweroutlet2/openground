@@ -1,16 +1,16 @@
 {
-  "wxt": {
+  "fastembed": {
     "type": "git_repo",
     "repo_url": "https://github.com/qdrant/fastembed.git",
     "docs_paths": [
       "docs"
     ]
   },
-  "fastembed": {
-    "type": "git_repo",
-    "repo_url": "https://github.com/qdrant/fastembed.git",
-    "docs_paths": [
-      "docs"
+  "claude-code": {
+    "type": "sitemap",
+    "sitemap_url": "https://code.claude.com/docs/sitemap.xml",
+    "filter_keywords": [
+      "/en/"
     ]
   }
 }

@@ -35,7 +35,9 @@ async def fetch_sitemap_urls(
     namespace = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
     urls = {
-        loc.text for loc in root.findall(path=".//ns:loc", namespaces=namespace) if loc.text
+        loc.text
+        for loc in root.findall(path=".//ns:loc", namespaces=namespace)
+        if loc.text
     }
     print(f"Found {len(urls)} unique URLs in sitemap")
     keywords = [k.lower() for k in filter_keywords]
@@ -186,21 +188,22 @@ async def extract_pages(
                 if (p := urlparse(url))
             }
             if len(urls) < original_count:
-                print(f"Trimmed query parameters: {original_count} -> {len(urls)} unique URLs")
+                print(
+                    f"Trimmed query parameters: {original_count} -> {len(urls)} unique URLs"
+                )
 
         # Filter by robots.txt
         parsed = urlparse(sitemap_url)
         base_url = f"{parsed.scheme}://{parsed.netloc}"
         robot_parser = await fetch_robots_txt(session, base_url)
-        
+
         urls = filter_urls_by_robots(urls, robot_parser)
         print(f"Filtered to {len(urls)} URLs after robots.txt check")
 
         semaphore = asyncio.Semaphore(concurrency_limit)
 
         tasks = [
-            process_url(semaphore, session, url, library_name, version)
-            for url in urls
+            process_url(semaphore, session, url, library_name, version) for url in urls
         ]
 
         # Use tqdm to track async task progress
@@ -215,5 +218,3 @@ async def extract_pages(
         pbar.close()
 
         await save_results(results, output_dir)
-        valid_count = sum(1 for r in results if r is not None)
-        success(f"Saved {valid_count} pages!")
