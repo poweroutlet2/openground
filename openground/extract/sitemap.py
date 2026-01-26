@@ -59,9 +59,14 @@ async def fetch_robots_txt(session: ClientSession, base_url: str) -> RobotFilePa
             if response.status == 200:
                 content = await response.text()
                 rp.parse(content.splitlines())
-            # If 404 or other error, all URLs are allowed by default
+            else:
+                # If 404 or other non-200 status, parse an empty robots.txt
+                # An empty robots.txt allows all URLs
+                rp.parse([])
     except Exception as e:
         print(f"Warning: Could not fetch robots.txt: {e}")
+        # Parse empty robots.txt to allow all URLs
+        rp.parse([])
 
     return rp
 
