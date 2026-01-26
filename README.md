@@ -121,6 +121,10 @@ openground install-mcp --claude-code
 # Claude will search the fastembed docs automatically!
 ```
 
+## Claude Code Agent
+
+Openground includes a custom Claude Code agent that searches official documentation without polluting your main conversation context. See [docs/claude-code-agent.md](docs/claude-code-agent.md) for installation and usage instructions.
+
 ## MCP Usage Statistics
 To see how many times each tool in the MCP server has been called:
 
