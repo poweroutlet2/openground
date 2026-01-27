@@ -1,3 +1,4 @@
+import asyncio
 import os
 import subprocess
 import tempfile
@@ -7,6 +8,7 @@ from urllib.parse import urlparse
 import nbformat
 
 from openground.extract.common import ParsedPage, save_results
+from openground.extract.sitemap import parse_html
 from openground.console import error
 
 
@@ -40,9 +42,9 @@ def parse_git_web_url(url: str) -> tuple[str, str | None, str | None]:
         # GitLab URLs often have '-' before tree/blob
         if "-" in path_parts:
             dash_index = path_parts.index("-")
-            if (
-                len(path_parts) > dash_index + 2
-                and path_parts[dash_index + 1] in ("tree", "blob")
+            if len(path_parts) > dash_index + 2 and path_parts[dash_index + 1] in (
+                "tree",
+                "blob",
             ):
                 project_path = "/".join(path_parts[:dash_index])
                 repo_url = f"https://gitlab.com/{project_path}.git"
@@ -65,7 +67,7 @@ def filter_documentation_files(
     """
     if allowed_extensions is None:
         # Default to most common doc formats
-        allowed_extensions = {".md", ".rst", ".txt", ".mdx", ".ipynb"}
+        allowed_extensions = {".md", ".rst", ".txt", ".mdx", ".ipynb", ".html", ".htm"}
 
     doc_files = []
 
@@ -269,7 +271,7 @@ async def extract_repo(
             return
 
         # Sparse checkout configuration
-        
+
         # Normalize docs_paths
         git_docs_paths = []
         for path in docs_paths:
@@ -352,8 +354,18 @@ async def extract_repo(
                 relative_path = file_path.relative_to(temp_path)
                 file_url = f"{base_web_url}/{relative_path}"
 
+                # Special handling for certain file types and fallback to default handling
                 if file_path.suffix.lower() == ".ipynb":
                     content, metadata = extract_notebook_content(file_path)
+                elif file_path.suffix.lower() in (".html", ".htm"):
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        html = f.read()
+                    parsed = await asyncio.to_thread(
+                        parse_html, file_url, html, "", library_name, version_to_store
+                    )
+                    if parsed:
+                        results.append(parsed)
+                        continue
                 else:
                     with open(file_path, "r", encoding="utf-8") as f:
                         raw_content = f.read()
