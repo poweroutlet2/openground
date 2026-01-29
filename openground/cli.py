@@ -24,6 +24,7 @@ from openground.config import (
 )
 from openground.console import success, error, hint, warning
 from openground.extract.source import get_library_config, get_source_file_path
+from openground.query import library_version_exists
 
 
 app = typer.Typer(
@@ -180,13 +181,6 @@ def add(
         if not final_filter_keywords and source_type == "sitemap":
             final_filter_keywords = source_config.get("filter_keywords", [])
 
-    if version is not None:
-        if source_type != "git_repo":
-            error(
-                f"--version can only be used for git repo sources. Provided source {source} is not a git repo."
-            )
-            raise typer.Exit(1)
-
     if version is None:
         version = DEFAULT_LIBRARY_VERSION
 
@@ -223,9 +217,39 @@ def add(
                 f"Could not reliably detect source type for {final_source}. Defaulting to sitemap."
             )
 
+    if version is not None and version != DEFAULT_LIBRARY_VERSION:
+        if source_type != "git_repo":
+            error(
+                f"--version can only be used for git repo sources. Detected source type '{source_type}' is not a git repo."
+            )
+            raise typer.Exit(1)
+
     # Extract
     # Determine version for directory path (always a string, defaults to "latest")
     output_dir = get_library_raw_data_dir(library, version=version)
+
+    # Check if library version exists in LanceDB BEFORE extraction
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+    library_exists = library_version_exists(library, version, db_path, table_name)
+
+    # Handle case where library doesn't exist in LanceDB but raw files do
+    if not library_exists and output_dir.exists() and list(output_dir.glob("*.json")):
+        warning(
+            f"Found stale raw data files for '{library}' version '{version}' "
+            "that are not in LanceDB. Cleaning up..."
+        )
+        import shutil
+
+        try:
+            shutil.rmtree(output_dir)
+        except (FileNotFoundError, OSError) as e:
+            warning(f"Could not remove stale files: {e}")
+        library_exists = False
+
+    if library_exists:
+        print(f"Library '{library}' version '{version}' already exists.")
+        print("Performing extraction and incremental update...")
 
     async def _run_extract():
         if source_type == "sitemap":
@@ -267,6 +291,39 @@ def add(
     page_count = len(list(output_dir.glob("*.json")))
     success(f"\nExtraction complete: {page_count} pages extracted to {output_dir}")
 
+    if library_exists:
+        from openground.update import perform_update
+
+        pages = load_parsed_pages(output_dir)
+
+        try:
+            summary = perform_update(
+                extracted_pages=pages,
+                library_name=library,
+                version=version,
+                db_path=db_path,
+                table_name=table_name,
+                raw_data_dir=output_dir,
+            )
+
+            print("\nUpdate Summary:")
+            print(f"  Added: {summary['added']} pages")
+            print(f"  Modified: {summary['modified']} pages")
+            print(f"  Deleted: {summary['deleted']} pages")
+            print(f"  Unchanged: {summary['unchanged']} pages")
+
+            if summary["added"] + summary["modified"] + summary["deleted"] == 0:
+                success("No changes detected. Nothing to update.")
+                return
+
+            success(f"Update complete: {library} ({version}) updated.")
+            return
+        except ValueError as e:
+            if "produced no pages" in str(e):
+                error(f"{e}")
+                raise typer.Exit(1)
+            raise
+
     if not yes:
         print("\nPress Enter to continue with embedding, or Ctrl+C to exit...")
         try:
@@ -301,6 +358,33 @@ def add(
             "Tip: Disable automatic addition to local sources  by running:\n"
             "  openground config set sources.auto_add_local false"
         )
+
+
+@app.command("update")
+def update_library(
+    library: str = typer.Argument(..., help="Name of the library to update."),
+    version: str = typer.Option("latest", "--version", "-v", help="Version to update."),
+    source: Optional[str] = typer.Option(
+        None, "--source", "-s", help="Override source URL."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip prompts."),
+):
+    """
+    Update an existing library with changes from the source.
+
+    Efficiently updates only changed pages by comparing content hashes.
+    This is an alias for the add command when a library already exists.
+    """
+    add(
+        library=library,
+        source=source,
+        version=version,
+        docs_paths=[],
+        filter_keywords=[],
+        yes=yes,
+        sources_file=None,
+        trim_query_params=False,
+    )
 
 
 @app.command()

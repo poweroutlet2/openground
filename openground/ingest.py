@@ -225,3 +225,59 @@ def ingest_to_lancedb(
         table.create_fts_index("content", replace=True)
     except Exception as exc:  # best-effort; index may already exist
         print(f"FTS index creation skipped: {exc}")
+
+
+def ingest_pages_to_lancedb(
+    pages: list[ParsedPage],
+    db_path: Path,
+    table_name: str,
+) -> None:
+    """
+    Ingest specific pages to LanceDB with explicit db/table params.
+
+    Similar to ingest_to_lancedb but allows override for update flow.
+
+    Args:
+        pages: List of parsed pages to ingest
+        db_path: Path to LanceDB storage
+        table_name: Name of the table to use
+    """
+    if not pages:
+        print("No pages to ingest.")
+        return
+
+    config = get_effective_config()
+    embedding_dimensions = config["embeddings"]["embedding_dimensions"]
+    embedding_backend = config["embeddings"]["embedding_backend"]
+    embedding_model = config["embeddings"]["embedding_model"]
+
+    db = lancedb.connect(str(db_path))
+    table = ensure_table(
+        db,
+        table_name,
+        embedding_dimensions=embedding_dimensions,
+        embedding_backend=embedding_backend,
+        embedding_model=embedding_model,
+    )
+
+    all_records = []
+    for page in tqdm(pages, desc="Chunking documents", unit="page"):
+        all_records.extend(chunk_document(page))
+
+    if not all_records:
+        print("No chunks produced; skipping ingestion.")
+        return
+
+    content_texts = [rec["content"] for rec in all_records]
+    embeddings = generate_embeddings(content_texts)
+
+    for rec, emb in zip(all_records, embeddings):
+        rec["vector"] = emb
+
+    print(f"Inserting {len(all_records)} chunks into LanceDB...")
+    table.add(all_records)
+
+    try:
+        table.create_fts_index("content", replace=True)
+    except Exception as exc:  # best-effort; index may already exist
+        print(f"FTS index creation skipped: {exc}")

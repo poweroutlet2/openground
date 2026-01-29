@@ -173,8 +173,14 @@ def list_libraries_with_versions(
             return {}
 
         # Load unique pairs efficiently
-        df = table.search().select(["library_name", "version"]).to_pandas().drop_duplicates().dropna()
-        
+        df = (
+            table.search()
+            .select(["library_name", "version"])
+            .to_pandas()
+            .drop_duplicates()
+            .dropna()
+        )
+
         # Group by library name and collect unique versions
         result = {}
         for _, row in df.iterrows():
@@ -268,32 +274,19 @@ def get_library_stats(
     # Get sample titles and unique URL count more efficiently
     # We only need a few titles, so we can limit the search
     df_titles = (
-        table.search()
-        .where(filter_str)
-        .select(["title", "url"])
-        .limit(500) 
-        .to_pandas()
+        table.search().where(filter_str).select(["title", "url"]).limit(500).to_pandas()
     )
 
     titles = [t for t in df_titles["title"].unique().tolist() if t and str(t).strip()][
         :5
     ]
 
-    # For unique URLs, we'll use the sampled data as a hint, or just use nunique() 
-    # if we have all data. Since we limited to 500 above for titles, let's do a 
-    # separate quick check for unique URLs if possible, or just use the count from 
-    # a slightly larger sample.
     unique_urls = df_titles["url"].nunique()
     if chunk_count > 500:
         # If there are more chunks, unique_urls might be higher than our sample
         # For now, we'll just note it's at least this many, or we can load all URLs
         # which is usually okay as URLs are small strings.
-        df_all_urls = (
-            table.search()
-            .where(filter_str)
-            .select(["url"])
-            .to_pandas()
-        )
+        df_all_urls = table.search().where(filter_str).select(["url"]).to_pandas()
         unique_urls = df_all_urls["url"].nunique()
 
     return {
@@ -327,3 +320,66 @@ def delete_library(
     # Delete rows
     table.delete(f"library_name = '{safe_name}' AND version = '{safe_version}'")
     return count
+
+
+def delete_urls(
+    urls: list[str],
+    library_name: str,
+    version: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> int:
+    """
+    Delete all chunks for given URLs from LanceDB.
+
+    Args:
+        urls: List of URLs to delete
+        library_name: Library name filter
+        version: Version filter
+        db_path: Path to LanceDB storage
+        table_name: Table name
+
+    Returns:
+        Number of deleted rows
+    """
+    table = _get_table(db_path, table_name)
+    if table is None:
+        return 0
+
+    if not urls:
+        return 0
+
+    safe_name = _escape_sql_string(library_name)
+    safe_version = _escape_sql_string(version)
+
+    # Build WHERE clause with OR conditions for URLs to delete
+    safe_urls = [_escape_sql_string(url) for url in urls]
+    url_conditions = " OR ".join(f"url = '{url}'" for url in safe_urls)
+    filter_str = f"library_name = '{safe_name}' AND version = '{safe_version}' AND ({url_conditions})"
+
+    count = table.count_rows(filter=filter_str)
+
+    table.delete(filter_str)
+    return count
+
+
+def library_version_exists(
+    library_name: str,
+    version: str,
+    db_path: Path = DEFAULT_DB_PATH,
+    table_name: str = DEFAULT_TABLE_NAME,
+) -> bool:
+    """
+    Check if library version exists in LanceDB.
+
+    Args:
+        library_name: Library name to check
+        version: Version to check
+        db_path: Path to LanceDB storage
+        table_name: Table name
+
+    Returns:
+        True if library version exists, False otherwise
+    """
+    stats = get_library_stats(library_name, version, db_path, table_name)
+    return stats is not None
