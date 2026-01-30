@@ -338,7 +338,7 @@ def add(
 
     # Auto-add to local sources.json if configured and source was provided manually
     if source and config.get("sources", {}).get("auto_add_local", True):
-        from openground.extract.source import save_source_to_local, LibrarySource
+        from openground.extract.source import save_source_to_sources, LibrarySource
 
         new_source_config: LibrarySource = {
             "type": source_type,  # type: ignore
@@ -352,10 +352,10 @@ def add(
             if final_docs_paths:
                 new_source_config["docs_paths"] = final_docs_paths
 
-        save_source_to_local(library, new_source_config)
-        success(f"Added source for '{library}' to local .openground/sources.json")
+        save_source_to_sources(library, new_source_config)
+        success(f"Added source for '{library}' to ~/.openground/sources.json")
         hint(
-            "Tip: Disable automatic addition to local sources  by running:\n"
+            "Tip: Disable automatic addition to user sources by running:\n"
             "  openground config set sources.auto_add_local false"
         )
 

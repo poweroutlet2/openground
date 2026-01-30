@@ -82,6 +82,72 @@ This will download the docs, embed them, and store them into lancedb. All locall
 
 Multiple versions of the same library can be stored and queried independently.
 
+### Sources Files
+
+Openground uses `sources.json` files to store library source configurations. When you add documentation with `--source`, openground remembers the source URL so you can add/update the same library later by just specifying its name.
+
+#### How Sources Files Work
+
+There are two types of sources files:
+
+1. **User Sources File** (`~/.openground/sources.json`)
+   - Shared across all your projects
+   - Created automatically when you first use `--source` flag
+   - This is where new sources are saved by default
+
+2. **Project Sources File** (`.openground/sources.json`)
+   - Project-specific overrides
+   - Created automatically in each project when you add a source
+   - Takes priority over user sources when both exist
+
+#### Priority Order
+
+When looking up a library by name, openground checks:
+1. Custom path via `--sources-file` flag
+2. Project-local `.openground/sources.json` (if exists)
+3. User `~/.openground/sources.json` (if exists)
+4. Package-level bundled sources
+
+#### Example Workflow
+
+```bash
+# In project1: Add library with source
+cd project1/
+openground add fastapi --source https://github.com/tiangolo/fastapi.git --docs-path docs/
+
+# In project2: Same library is now available by name!
+cd ../project2/
+openground add fastapi  # Finds source from ~/.openground/sources.json
+
+# Project-specific override: Add a different version for this project
+echo '{"fastapi": {"type": "git_repo", "repo_url": "https://github.com/tiangolo/fastapi.git", "docs_paths": ["docs"], "languages": ["python"]}}' > .openground/sources.json
+```
+
+#### Managing Sources
+
+Sources are stored as JSON with this structure:
+
+```json
+{
+  "fastapi": {
+    "type": "git_repo",
+    "repo_url": "https://github.com/tiangolo/fastapi",
+    "docs_paths": ["docs"],
+  },
+  "numpy": {
+    "type": "sitemap",
+    "sitemap_url": "https://numpy.org/doc/sitemap.xml",
+    "filter_keywords": ["docs/"]
+  }
+}
+```
+
+To disable automatic source saving:
+
+```bash
+openground config set sources.auto_add_local false
+```
+
 ### Use with AI Agents
 
 To install the MCP server:

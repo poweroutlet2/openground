@@ -31,7 +31,10 @@ CONCURRENCY_LIMIT = 50
 
 
 DEFAULT_RAW_DATA_DIR_BASE = get_data_home() / "raw_data"
-DEFAULT_LOCAL_SOURCE_FILE = Path(".openground") / "sources.json"
+# User's personal sources file (shared across all projects)
+USER_SOURCE_FILE = Path.home() / ".openground" / "sources.json"
+# Project-local sources file (for project-specific overrides)
+PROJECT_SOURCE_FILE = Path(".openground") / "sources.json"
 
 
 def get_library_raw_data_dir(library_name: str, version: str) -> Path:
