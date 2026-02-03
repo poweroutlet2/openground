@@ -64,7 +64,7 @@ To add documentation from a git repo to openground, run:
 openground add library-name \
   --source https://github.com/example/example.git \
   --docs-path docs/ \
-  --version v1.0.0 \
+  --version v1.0.0 \ # gets v1.0.0 docs using git tags
   -y
 ```
 
