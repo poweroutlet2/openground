@@ -19,7 +19,9 @@ openground is an on-device RAG system that extracts documentation from git repos
       │    │ git repo ├─────>│  Extract  ├──>│  Chunk   ├──>│ LanceDB  │    │
       │    |   -or-   |      │ (raw_data)│   │   Text   │   │ (vector  │    │
       │    │ sitemap  │      └───────────┘   └──────────┘   │  +BM25)  │    │
-      │    └──────────┘                           │         └────┬─────┘    │
+      │    │   -or-   │                           │         └────┬─────┘    │
+      │    │ local dir│                           │              │          │
+      │    └──────────┘                           │              │          │
       │                                           ▼              │          │
       │                                    ┌───────────┐         │          │
       │                                    │   Local   |<────────┘          │
@@ -41,8 +43,8 @@ openground is an on-device RAG system that extracts documentation from git repos
 Recommended to install with [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv tool install openground # Larger package size, automatic GPU/MPS support
-uv tool install 'openground[fastembed]' # Lightweight CPU embedding
+uv tool install openground # Larger package size, automatic GPU/MPS/CPU support
+uv tool install 'openground[fastembed]' # Lightweight CPU support
 uv tool install 'openground[fastembed-gpu]' # Experimental CUDA/GPU support through fastembed
 ```
 
@@ -54,7 +56,7 @@ pip install openground
 
 ### Add Documentation
 
-Openground can source documentation from git repos or sitemaps.
+Openground can source documentation from git repos, sitemaps, or local directories.
 
 To add documentation from a git repo to openground, run:
 
@@ -68,15 +70,32 @@ openground add library-name \
 
 The `--version` flag specifies a git tag to checkout (defaults to latest).
 
-To add documentation from a sitemap to openground, run:
+To add documentation from a sitemap to openground:
 
 ```bash
 openground add library-name \
   --source https://docs.example.com/sitemap.xml \
-  --filter-keyword docs/ \
-  --filter-keyword blog/ \
+  --filter-keyword docs \ 
+  --filter-keyword blog \
   -y
 ```
+
+To add documentation from a local path to openground:
+
+```bash
+# Absolute path
+openground add library-name --source /path/to/docs -y
+
+# Home directory
+openground add library-name --source ~/path/to/docs -y
+
+# Relative path (from current directory)
+openground add library-name --source ./docs -y
+openground add library-name --source ../docs -y
+openground add library-name --source docs -y
+```
+
+ Git and local directory additions support `.md`, `.rst`, `.txt`, `.mdx`, `.ipynb`, `.html`, and `.htm` files.
 
 This will download the docs, embed them, and store them into lancedb. All locally.
 

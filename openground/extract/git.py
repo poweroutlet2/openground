@@ -1,14 +1,14 @@
-import asyncio
-import os
 import subprocess
 import tempfile
 from pathlib import Path
 from urllib.parse import urlparse
 
-import nbformat
-
-from openground.extract.common import ParsedPage, save_results
-from openground.extract.sitemap import parse_html
+from openground.extract.common import (
+    ParsedPage,
+    save_results,
+    filter_documentation_files,
+    process_documentation_files,
+)
 from openground.console import error
 
 
@@ -57,99 +57,6 @@ def parse_git_web_url(url: str) -> tuple[str, str | None, str | None]:
                 return repo_url, ref, doc_path
 
     return url, None, None
-
-
-def filter_documentation_files(
-    docs_dir: Path, allowed_extensions: set[str] | None = None
-) -> list[Path]:
-    """
-    Filter to relevant documentation files.
-    """
-    if allowed_extensions is None:
-        # Default to most common doc formats
-        allowed_extensions = {".md", ".rst", ".txt", ".mdx", ".ipynb", ".html", ".htm"}
-
-    doc_files = []
-
-    for root, dirs, files in os.walk(docs_dir):
-        # Skip common non-doc directories
-        dirs[:] = [
-            d
-            for d in dirs
-            if d
-            not in {
-                "node_modules",
-                "__pycache__",
-                ".git",
-                "images",
-                "img",
-                "assets",
-                "static",
-                "_build",
-                "build",
-                "dist",
-                ".venv",
-            }
-        ]
-
-        for file in files:
-            file_path = Path(root) / file
-
-            # Check if file has allowed extension
-            if file_path.suffix.lower() in allowed_extensions:
-                # Skip hidden files and common non-doc files
-                if not file.startswith(".") and file not in {
-                    "LICENSE",
-                    "CHANGELOG",
-                    "AUTHORS",
-                }:
-                    doc_files.append(file_path)
-
-    return doc_files
-
-
-def extract_notebook_content(file_path: Path) -> tuple[str, dict[str, str]]:
-    """Extract content from Jupyter notebook."""
-    with open(file_path, "r", encoding="utf-8") as f:
-        nb = nbformat.read(f, as_version=4)
-
-    content_parts = []
-    metadata = {
-        "title": nb.metadata.get("title", file_path.stem),
-        "description": f"Jupyter notebook from {file_path.name}",
-    }
-
-    for cell in nb.cells:
-        if cell.cell_type == "markdown":
-            content_parts.append(cell.source)
-        elif cell.cell_type == "code":
-            # Include code cells with a marker
-            content_parts.append(f"```python\n{cell.source}\n```")
-
-    return "\n\n".join(content_parts), metadata
-
-
-def remove_front_matter(content: str) -> tuple[str, dict[str, str]]:
-    """
-    Parse YAML front matter and return (content_without_front_matter, metadata).
-    """
-    if not content.startswith("---"):
-        return content, {}
-
-    parts = content.split("---", 2)
-    if len(parts) < 3:
-        return content, {}
-
-    front_matter = parts[1]
-    remaining_content = parts[2].strip()
-
-    metadata = {}
-    for line in front_matter.strip().splitlines():
-        if ":" in line:
-            key, value = line.split(":", 1)
-            metadata[key.strip().lower()] = value.strip()
-
-    return remaining_content, metadata
 
 
 def get_default_branch(repo_url: str) -> str:
@@ -319,7 +226,7 @@ async def extract_repo(
             return
 
         # Process files
-        results: list[ParsedPage | None] = []
+        results: list[ParsedPage] = []
 
         # Collect all documentation files from all requested paths
         all_doc_files = []
@@ -349,47 +256,19 @@ async def extract_repo(
             # Use /tree/ as it works reasonably for both dirs and files as a base
             base_web_url = f"{base_web_url}/tree/{default_branch}"
 
-        for file_path in doc_files:
-            try:
-                relative_path = file_path.relative_to(temp_path)
-                file_url = f"{base_web_url}/{relative_path}"
+        # Use shared file processing function
+        def make_git_url(file_path: Path) -> str:
+            relative_path = file_path.relative_to(temp_path)
+            return f"{base_web_url}/{relative_path}"
 
-                # Special handling for certain file types and fallback to default handling
-                if file_path.suffix.lower() == ".ipynb":
-                    content, metadata = extract_notebook_content(file_path)
-                elif file_path.suffix.lower() in (".html", ".htm"):
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        html = f.read()
-                    parsed = await asyncio.to_thread(
-                        parse_html, file_url, html, "", library_name, version_to_store
-                    )
-                    if parsed:
-                        results.append(parsed)
-                        continue
-                else:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        raw_content = f.read()
-                    content, metadata = remove_front_matter(raw_content)
-
-                # Use title from metadata if available, otherwise filename
-                title = metadata.get("title")
-                if not title:
-                    title = file_path.stem.replace("-", " ").replace("_", " ").title()
-
-                results.append(
-                    ParsedPage(
-                        url=file_url,
-                        library_name=library_name,
-                        version=version_to_store,
-                        title=title,
-                        description=metadata.get("description")
-                        or f"Documentation file from {repo_url}",
-                        last_modified=None,
-                        content=content,
-                    )
-                )
-            except Exception as e:
-                print(f"Warning: Could not process {file_path}: {e}")
+        results = await process_documentation_files(
+            doc_files=doc_files,
+            url_generator=make_git_url,
+            library_name=library_name,
+            version=version_to_store,
+            default_description=f"Documentation file from {repo_url}",
+            base_path=temp_path,
+        )
 
         if not results:
             error("No documentation files found after processing.")

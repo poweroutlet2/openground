@@ -58,9 +58,11 @@ def _pre_load_resources():
         from openground.embeddings import generate_embeddings
 
         generate_embeddings(["warmup"], show_progress=False)
-        
+
         duration = time.time() - start_time
-        sys.stderr.write(f"[info] Background initialization complete (took {duration:.2f}s). Server is fully ready.\n")
+        sys.stderr.write(
+            f"[info] Background initialization complete (took {duration:.2f}s). Server is fully ready.\n"
+        )
     except Exception as e:
         # Background tasks should never crash the server
         sys.stderr.write(f"[error] Background initialization failed: {e}\n")

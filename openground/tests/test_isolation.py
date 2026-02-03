@@ -2,7 +2,7 @@
 Tests to verify that the isolation sandbox is working correctly.
 Run this FIRST to ensure tests won't touch your real data.
 """
-import os
+
 from pathlib import Path
 from openground.config import get_data_home, get_config_path
 
@@ -37,7 +37,6 @@ def test_config_dir_is_sandboxed():
 
 def test_libraries_dont_leak_between_tests():
     """Test that data from one test doesn't leak to another."""
-    from openground.ingest import load_parsed_pages
 
     # This test should run with empty data directory
     data_home = get_data_home()

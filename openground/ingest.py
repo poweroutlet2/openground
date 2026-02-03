@@ -12,7 +12,6 @@ from openground.extract.common import ParsedPage
 from openground.config import (
     get_effective_config,
 )
-from openground.console import success
 from openground.embeddings import generate_embeddings
 
 

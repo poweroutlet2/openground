@@ -1,6 +1,7 @@
 import pytest
 import tempfile
 import shutil
+import platform
 from pathlib import Path
 from typer.testing import CliRunner
 from unittest.mock import patch, MagicMock
@@ -524,18 +525,28 @@ class TestAddUpdateDetection:
 
         with (
             patch(
-                "openground.extract.sitemap.extract_pages", side_effect=mock_extract_pages
+                "openground.extract.sitemap.extract_pages",
+                side_effect=mock_extract_pages,
             ),
             patch("openground.ingest.ingest_to_lancedb"),
             patch("openground.ingest.load_parsed_pages", return_value=[]),
         ):
             # Act: Run add command
             result = runner.invoke(
-                app, ["add", library_name, "--source", "https://example.com/sitemap.xml", "-y"]
+                app,
+                [
+                    "add",
+                    library_name,
+                    "--source",
+                    "https://example.com/sitemap.xml",
+                    "-y",
+                ],
             )
 
         # Assert: Should NOT show "already exists" message
-        assert result.exit_code == 0, f"Exit code {result.exit_code}, output: {result.stdout}"
+        assert result.exit_code == 0, (
+            f"Exit code {result.exit_code}, output: {result.stdout}"
+        )
         assert "already exists" not in result.stdout
 
     @patch("openground.query.library_version_exists")
@@ -573,17 +584,24 @@ class TestAddUpdateDetection:
             # Create a dummy extracted file
             (output_dir / "test.json").write_text('{"url": "https://example.com"}')
 
-
         with (
             patch(
-                "openground.extract.sitemap.extract_pages", side_effect=mock_extract_pages
+                "openground.extract.sitemap.extract_pages",
+                side_effect=mock_extract_pages,
             ),
             patch("openground.ingest.ingest_to_lancedb"),
             patch("openground.ingest.load_parsed_pages", return_value=[]),
         ):
             # Act: Run add command
             result = runner.invoke(
-                app, ["add", library_name, "--source", "https://example.com/sitemap.xml", "-y"]
+                app,
+                [
+                    "add",
+                    library_name,
+                    "--source",
+                    "https://example.com/sitemap.xml",
+                    "-y",
+                ],
             )
 
         # Debug: Print output if failing
@@ -592,11 +610,18 @@ class TestAddUpdateDetection:
             print(f"Output: {result.stdout}")
             if result.exception:
                 import traceback
+
                 print(f"Exception: {result.exception}")
-                traceback.print_exception(type(result.exception), result.exception, result.exception.__traceback__)
+                traceback.print_exception(
+                    type(result.exception),
+                    result.exception,
+                    result.exception.__traceback__,
+                )
 
         # Assert: Should NOT show "already exists" (stale files should be cleaned up)
-        assert result.exit_code == 0, f"Exit code {result.exit_code}, output: {result.stdout}"
+        assert result.exit_code == 0, (
+            f"Exit code {result.exit_code}, output: {result.stdout}"
+        )
         assert "already exists" not in result.stdout
         # The warning about stale files goes to rich console, not stdout, so we can't check for it
         # But the key thing is that it doesn't treat the library as existing
@@ -623,9 +648,15 @@ class TestAddUpdateDetection:
 
         # Pre-create raw data files (simulating previous extraction)
         output_dir.mkdir(parents=True, exist_ok=True)
-        (output_dir / "page1.json").write_text('{"url": "https://example.com/page1", "title": "Page 1", "content": "Content 1"}')
-        (output_dir / "page2.json").write_text('{"url": "https://example.com/page2", "title": "Page 2", "content": "Content 2"}')
-        (output_dir / "page3.json").write_text('{"url": "https://example.com/page3", "title": "Page 3", "content": "Content 3"}')
+        (output_dir / "page1.json").write_text(
+            '{"url": "https://example.com/page1", "title": "Page 1", "content": "Content 1"}'
+        )
+        (output_dir / "page2.json").write_text(
+            '{"url": "https://example.com/page2", "title": "Page 2", "content": "Content 2"}'
+        )
+        (output_dir / "page3.json").write_text(
+            '{"url": "https://example.com/page3", "title": "Page 3", "content": "Content 3"}'
+        )
 
         # Simulate user deleting one raw file
         (output_dir / "page2.json").unlink()
@@ -639,22 +670,36 @@ class TestAddUpdateDetection:
             # Recreate directory (extraction clears existing files first)
             output_dir.mkdir(parents=True, exist_ok=True)
             # Create all 3 files (simulating extraction from source)
-            (output_dir / "page1.json").write_text('{"url": "https://example.com/page1"}')
-            (output_dir / "page2.json").write_text('{"url": "https://example.com/page2"}')
-            (output_dir / "page3.json").write_text('{"url": "https://example.com/page3"}')
+            (output_dir / "page1.json").write_text(
+                '{"url": "https://example.com/page1"}'
+            )
+            (output_dir / "page2.json").write_text(
+                '{"url": "https://example.com/page2"}'
+            )
+            (output_dir / "page3.json").write_text(
+                '{"url": "https://example.com/page3"}'
+            )
 
         # Note: We can't test the full update flow due to fastembed import issues
         # But we can verify the detection logic works correctly
         with (
             patch(
-                "openground.extract.sitemap.extract_pages", side_effect=mock_extract_pages
+                "openground.extract.sitemap.extract_pages",
+                side_effect=mock_extract_pages,
             ),
             patch("openground.ingest.ingest_to_lancedb"),
             patch("openground.ingest.load_parsed_pages", return_value=[]),
         ):
             # Act: Run add command
             result = runner.invoke(
-                app, ["add", library_name, "--source", "https://example.com/sitemap.xml", "-y"]
+                app,
+                [
+                    "add",
+                    library_name,
+                    "--source",
+                    "https://example.com/sitemap.xml",
+                    "-y",
+                ],
             )
 
         # Assert: Should complete successfully
@@ -662,12 +707,366 @@ class TestAddUpdateDetection:
         # so we can't assert on it here. But we can verify:
         # 1. The command succeeded (exit code 0)
         # 2. All 3 files were recreated by extraction (including the deleted one)
-        assert result.exit_code == 0, f"Exit code {result.exit_code}, output: {result.stdout}"
-        assert len(list(output_dir.glob("*.json"))) == 3, "All files should be recreated by extraction"
+        assert result.exit_code == 0, (
+            f"Exit code {result.exit_code}, output: {result.stdout}"
+        )
+        assert len(list(output_dir.glob("*.json"))) == 3, (
+            "All files should be recreated by extraction"
+        )
 
         # Verify the deleted file (page2.json) was recreated
         assert (output_dir / "page2.json").exists(), "Deleted file should be recreated"
 
 
+# Tests for local path extraction
 
 
+class TestLocalPathDetection:
+    """Test the is_local_path() function for auto-detecting local paths."""
+
+    def test_absolute_unix_paths_detected(self):
+        """
+        Absolute Unix paths like /path/to/docs should be detected as local.
+        AAA Pattern:
+        - Arrange: Define test paths (absolute Unix paths)
+        - Act: Call is_local_path() for each path
+        - Assert: All return True (detected as local)
+        """
+        from openground.cli import is_local_path
+
+        # Arrange: Define test paths
+        test_paths = ["/home/user/docs", "/var/www/html", "/tmp/test"]
+
+        # Act & Assert: Each should be detected as local
+        for path in test_paths:
+            assert is_local_path(path) is True, f"Should detect {path} as local"
+
+    def test_relative_paths_detected(self):
+        """
+        Relative paths like ./docs and ../docs should be detected as local.
+        AAA Pattern:
+        - Arrange: Define test paths (relative paths)
+        - Act: Call is_local_path() for each path
+        - Assert: All return True (detected as local)
+        """
+        from openground.cli import is_local_path
+
+        # Arrange: Define test paths
+        test_paths = ["./docs", "../docs", "./relative/path/to/docs"]
+
+        # Act & Assert: Each should be detected as local
+        for path in test_paths:
+            assert is_local_path(path) is True, f"Should detect {path} as local"
+
+    def test_home_expansion_paths_detected(self):
+        """
+        Paths starting with ~ should be detected as local.
+        AAA Pattern:
+        - Arrange: Define test paths (home directory paths)
+        - Act: Call is_local_path() for each path
+        - Assert: All return True (detected as local)
+        """
+        from openground.cli import is_local_path
+
+        # Arrange: Define test paths
+        test_paths = ["~/Documents", "~/code/project/docs"]
+
+        # Act & Assert: Each should be detected as local
+        for path in test_paths:
+            assert is_local_path(path) is True, f"Should detect {path} as local"
+
+    @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-specific test")
+    def test_windows_paths_detected(self):
+        """
+        Windows paths like C:\\path should be detected as local on Windows.
+        AAA Pattern:
+        - Arrange: Define test paths (Windows paths)
+        - Act: Call is_local_path() for each path
+        - Assert: All return True (detected as local)
+        """
+        from openground.cli import is_local_path
+
+        # Arrange: Define test paths
+        test_paths = [r"C:\Users\test\docs", r"D:\projects\docs", r"\\server\share"]
+
+        # Act & Assert: Each should be detected as local
+        for path in test_paths:
+            assert is_local_path(path) is True, f"Should detect {path} as local"
+
+    def test_urls_not_detected_as_local_paths(self):
+        """
+        URLs should NOT be detected as local paths.
+        AAA Pattern:
+        - Arrange: Define test URLs
+        - Act: Call is_local_path() for each URL
+        - Assert: All return False (NOT detected as local)
+        """
+        from openground.cli import is_local_path
+
+        # Arrange: Define test URLs
+        test_urls = [
+            "https://github.com/user/repo",
+            "https://example.com/sitemap.xml",
+            "http://localhost:8080/docs",
+        ]
+
+        # Act & Assert: Each should NOT be detected as local
+        for url in test_urls:
+            assert is_local_path(url) is False, f"Should NOT detect {url} as local"
+
+    def test_domains_without_protocol_not_detected_as_local(self):
+        """
+        Domains without protocol should NOT be detected as local paths.
+        AAA Pattern:
+        - Arrange: Define test domains (without protocol)
+        - Act: Call is_local_path() for each domain
+        - Assert: All return False (NOT detected as local)
+        """
+        from openground.cli import is_local_path
+
+        # Arrange: Define test domains
+        test_domains = ["example.com", "github.com/user/repo"]
+
+        # Act & Assert: Each should NOT be detected as local
+        for domain in test_domains:
+            assert is_local_path(domain) is False, (
+                f"Should NOT detect {domain} as local"
+            )
+
+    def test_existing_path_detected_as_local(self, tmp_path):
+        """
+        An existing path in the filesystem should be detected as local.
+        AAA Pattern:
+        - Arrange: Create a test directory on the filesystem
+        - Act: Call is_local_path() with the path
+        - Assert: Returns True (detected as local)
+        """
+        from openground.cli import is_local_path
+
+        # Arrange: Create a test directory
+        test_dir = tmp_path / "test_docs"
+        test_dir.mkdir()
+        (test_dir / "README.md").write_text("# Test")
+
+        # Act: Check if path is detected as local
+        result = is_local_path(str(test_dir))
+
+        # Assert: Should be detected as local
+        assert result is True, f"Should detect existing path {test_dir} as local"
+
+    def test_nonexistent_path_with_valid_pattern_detected(self):
+        """
+        A non-existent path with valid pattern should still be detected as local.
+        AAA Pattern:
+        - Arrange: Define test paths that don't exist but have valid patterns
+        - Act: Call is_local_path() for each path
+        - Assert: All return True (detected as local via pattern matching)
+        """
+        from openground.cli import is_local_path
+
+        # Arrange: Define test paths (non-existent but valid patterns)
+        test_paths = ["/nonexistent/path/to/docs", "./nonexistent"]
+
+        # Act & Assert: Each should be detected as local (via pattern)
+        for path in test_paths:
+            assert is_local_path(path) is True, (
+                f"Should detect {path} as local (pattern match)"
+            )
+
+
+class TestLocalPathExtraction:
+    """Test local path extraction via CLI."""
+
+    def test_add_with_source_option_creates_raw_data(
+        self, temp_config_dir, mock_config, tmp_path
+    ):
+        """
+        Test that using --source option with local path creates raw data files.
+        AAA Pattern:
+        - Arrange: Create a local directory with markdown files
+        - Act: Run add command with --source option (local path)
+        - Assert: Raw data files are created with correct content
+        """
+        # Arrange: Create test documentation files
+        docs_dir = tmp_path / "test_docs"
+        docs_dir.mkdir()
+        (docs_dir / "README.md").write_text("# Test Project\n\nThis is a test.")
+        (docs_dir / "api.md").write_text("# API\n\nAPI documentation.")
+
+        library_name = "test-local-lib"
+        raw_data_dir = Path(mock_config["raw_data_dir"])
+
+        # Mock the ingestion to avoid embedding overhead
+        with (
+            patch("openground.ingest.ingest_to_lancedb"),
+            patch("openground.ingest.load_parsed_pages", return_value=[]),
+        ):
+            # Act: Run add command with --source (local path auto-detection)
+            result = runner.invoke(
+                app, ["add", library_name, "--source", str(docs_dir), "--yes"]
+            )
+
+        # Assert: Command should succeed
+        assert result.exit_code == 0, (
+            f"Exit code {result.exit_code}, output: {result.stdout}"
+        )
+
+        # Verify raw data was created
+        # Version is date-based (local-YYYY-MM-DD), so find the latest version directory
+        lib_dir = raw_data_dir / library_name
+        assert lib_dir.exists(), "Library directory should exist"
+
+        version_dirs = list(lib_dir.iterdir())
+        assert len(version_dirs) == 1, "Should have one version directory"
+        output_dir = version_dirs[0]
+
+        # Verify JSON files were created
+        json_files = list(output_dir.glob("*.json"))
+        assert len(json_files) == 2, "Should have 2 JSON files (README.md and api.md)"
+
+        # Verify content includes file:// URLs
+        for json_file in json_files:
+            content = json_file.read_text()
+            assert "file://" in content, "Should use file:// URLs"
+
+    def test_add_with_source_auto_detects_local_path(
+        self, temp_config_dir, mock_config, tmp_path
+    ):
+        """
+        Test that passing a local path to --source is auto-detected as local_path.
+        AAA Pattern:
+        - Arrange: Create a local directory with markdown files
+        - Act: Run add command with local path as --source
+        - Assert: Works correctly with auto-detected local path
+        """
+        # Arrange: Create test documentation files
+        docs_dir = tmp_path / "auto_detect_docs"
+        docs_dir.mkdir()
+        (docs_dir / "README.md").write_text("# Auto Detect Test")
+
+        library_name = "test-autodetect-lib"
+        raw_data_dir = Path(mock_config["raw_data_dir"])
+
+        # Mock the ingestion
+        with (
+            patch("openground.ingest.ingest_to_lancedb"),
+            patch("openground.ingest.load_parsed_pages", return_value=[]),
+        ):
+            # Act: Use --source with local path (not --path)
+            result = runner.invoke(
+                app, ["add", library_name, "--source", str(docs_dir), "--yes"]
+            )
+
+        # Assert: Should work the same as --path
+        assert result.exit_code == 0, (
+            f"Exit code {result.exit_code}, output: {result.stdout}"
+        )
+
+        # Verify raw data was created
+        lib_dir = raw_data_dir / library_name
+        assert lib_dir.exists(), (
+            "Library directory should exist with auto-detected local path"
+        )
+
+    def test_source_option_with_nonexistent_directory_errors(self, mock_config):
+        """
+        Test that --source with non-existent local path produces an error.
+        AAA Pattern:
+        - Arrange: No directory setup (path doesn't exist)
+        - Act: Run add command with --source pointing to non-existent directory
+        - Assert: Command should fail with appropriate error message
+        """
+        # Arrange: Define library name and non-existent path
+        library_name = "test-nonexistent"
+        nonexistent_path = "/nonexistent/path/that/does/not/exist"
+
+        # Act: Try to add with non-existent path
+        result = runner.invoke(app, ["add", library_name, "--source", nonexistent_path])
+
+        # Assert: Should fail with "does not exist" error or non-zero exit code
+        assert "does not exist" in result.stdout or result.exit_code != 0
+
+    def test_local_path_with_jupyter_notebook(
+        self, temp_config_dir, mock_config, tmp_path
+    ):
+        """
+        Test that local path extraction handles Jupyter notebooks correctly.
+        AAA Pattern:
+        - Arrange: Create a directory with a .ipynb file
+        - Act: Run add command with --source (local path)
+        - Assert: Notebook content is extracted (markdown + code cells)
+        """
+        # Arrange: Create a Jupyter notebook
+        docs_dir = tmp_path / "notebook_docs"
+        docs_dir.mkdir()
+
+        # Simple valid Jupyter notebook JSON
+        notebook_content = """{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": ["# Notebook Title\\n", "\\n", "This is a notebook."]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {},
+      "outputs": [],
+      "source": ["print('hello world')"]
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "display_name": "Python 3",
+      "language": "python",
+      "name": "python3"
+    },
+    "language_info": {
+      "name": "python",
+      "version": "3.8.0"
+    },
+    "title": "Test Notebook"
+  },
+  "nbformat": 4,
+  "nbformat_minor": 4
+}"""
+        (docs_dir / "tutorial.ipynb").write_text(notebook_content)
+
+        library_name = "test-notebook-lib"
+        raw_data_dir = Path(mock_config["raw_data_dir"])
+
+        # Mock the ingestion to avoid embedding overhead
+        with (
+            patch("openground.ingest.ingest_to_lancedb"),
+            patch("openground.ingest.load_parsed_pages", return_value=[]),
+        ):
+            # Act: Run add command with --source (local path)
+            result = runner.invoke(
+                app, ["add", library_name, "--source", str(docs_dir), "--yes"]
+            )
+
+        # Assert: Command should succeed
+        if result.exit_code != 0:
+            print(f"\nExit code: {result.exit_code}")
+            print(f"Output: {result.stdout}")
+            if result.exception:
+                import traceback
+
+                print(f"Exception: {result.exception}")
+                traceback.print_exception(
+                    type(result.exception),
+                    result.exception,
+                    result.exception.__traceback__,
+                )
+
+        assert result.exit_code == 0
+
+        # Assert: Verify notebook was extracted with markdown and code
+        lib_dir = raw_data_dir / library_name
+        version_dir = list(lib_dir.iterdir())[0]
+        json_file = list(version_dir.glob("*.json"))[0]
+        content = json_file.read_text()
+
+        # Should have markdown and code from notebook
+        assert "Notebook Title" in content or "print" in content

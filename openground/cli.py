@@ -23,8 +23,62 @@ from openground.config import (
     DEFAULT_LIBRARY_VERSION,
 )
 from openground.console import success, error, hint, warning
-from openground.extract.source import get_library_config, get_source_file_path
+from openground.extract.source import get_library_config
 from openground.query import library_version_exists
+
+
+def is_local_path(source: str) -> bool:
+    """
+    Detect if a source string is a local path.
+
+    First checks if the path exists on the filesystem.
+    If not, falls back to pattern-based detection.
+
+    Args:
+        source: The source string to check
+
+    Returns:
+        True if the source appears to be a local path, False otherwise
+    """
+    # First check: filesystem existence (most reliable)
+    try:
+        expanded_path = Path(source).expanduser()
+        if expanded_path.exists():
+            return True
+    except (OSError, RuntimeError):
+        # Path might be invalid or have special characters, continue to pattern matching
+        pass
+
+    # Second check: pattern-based detection
+    # Check for absolute Unix paths (starting with /)
+    if source.startswith("/"):
+        return True
+
+    # Check for home directory expansion (starting with ~)
+    if source.startswith("~"):
+        return True
+
+    # Check for relative paths (./ or ../)
+    if source.startswith("./") or source.startswith("../"):
+        return True
+
+    # Check for Windows paths
+    if platform.system() == "Windows":
+        # Drive letter (e.g., C:\, D:\)
+        if len(source) >= 2 and source[0].isalpha() and source[1] == ":":
+            return True
+        # UNC paths (e.g., \\server\share)
+        if source.startswith("\\\\"):
+            return True
+        # Backslash paths (e.g., \Users\...)
+        if source.startswith("\\") and not source.startswith("\\\\"):
+            return True
+    else:
+        # On non-Windows, a backslash might indicate a Windows-style path being used
+        if "\\" in source:
+            return True
+
+    return False
 
 
 app = typer.Typer(
@@ -94,7 +148,10 @@ def add(
         ..., help="Name of the library (or source key if no source is provided)."
     ),
     source: Optional[str] = typer.Option(
-        None, "--source", "-s", help="Root sitemap URL or Git repo URL to crawl."
+        None,
+        "--source",
+        "-s",
+        help="Root sitemap URL, Git repo URL, or local path to process.",
     ),
     version: str | None = typer.Option(
         None,
@@ -132,12 +189,12 @@ def add(
     ),
 ):
     """
-    Extract documentation from a source (source file, sitemap, or git) and ingest it.
+    Extract documentation from a source (source file, sitemap, git, or local path) and ingest it.
 
     This command detects the source type and performs the extraction
     and ingestion in one step.
 
-    For git sources, the following file extensions are parsed: .md, .rst, .txt, .mdx, .ipynb
+    For git and local path sources, the following file extensions are parsed: .md, .rst, .txt, .mdx, .ipynb, .html, .htm
     """
     from rich.console import Console
 
@@ -161,25 +218,39 @@ def add(
     # Print which sources file is being used if a config was found
     if source_config and actual_sources_path:
         hint(f"Using sources file: {actual_sources_path}")
+
+    # source_type: Which kind of source this is (sitemap, git_repo, local_path)
+    # final_source: The resolved URL/path after processing (e.g., extracted from GitHub web URL)
+    # These start with user input or None, then get resolved below
     source_type = None
     final_source = source
     final_docs_paths = docs_paths
     final_filter_keywords = filter_keywords
 
+    # Step 1: Populate from sources file config
+    # If a source_config was found, extract the type and URL/path
     if source_config:
         source_type = source_config.get("type")
         if not final_source:
+            # Extract the appropriate URL based on source type
             if source_type == "sitemap":
                 final_source = source_config.get("sitemap_url")
             elif source_type == "git_repo":
                 final_source = source_config.get("repo_url")
+            elif source_type == "local_path":
+                final_source = source_config.get("local_path")
 
+        # Extract type-specific configs if not provided via CLI
         if not final_docs_paths and source_type == "git_repo":
             # Map 'docs_paths' from current json to final_docs_paths
             final_docs_paths = source_config.get("docs_paths", [])
 
         if not final_filter_keywords and source_type == "sitemap":
             final_filter_keywords = source_config.get("filter_keywords", [])
+
+    # For local paths, generate date-based version
+    if source_type == "local_path":
+        version = datetime.now().strftime("local-%Y-%m-%d")
 
     if version is None:
         version = DEFAULT_LIBRARY_VERSION
@@ -192,11 +263,17 @@ def add(
         )
         raise typer.Exit(1)
 
+    # Step 2: Auto-detect source type if not already determined
+    # This happens when user provides --source directly without a sources file entry
     if not source_type:
-        # Detect type from URL
+        # Detect type from URL or local path
+        # Priority: git/sitemap URLs first, then local paths
         if any(domain in final_source for domain in ["github.com", "gitlab.com"]):
             from openground.extract.git import parse_git_web_url
 
+            # Parse GitHub/GitLab web URLs to extract the actual git repo URL
+            # For example: "https://github.com/user/repo/tree/v1.0/docs"
+            # becomes: "https://github.com/user/repo.git"
             repo_url, ref, doc_path = parse_git_web_url(final_source)
             if repo_url != final_source:
                 final_source = repo_url
@@ -210,6 +287,11 @@ def add(
                 final_docs_paths = ["/"]
         elif final_source.endswith(".xml") or "sitemap" in final_source.lower():
             source_type = "sitemap"
+        elif is_local_path(final_source):
+            # Check if it's a local path
+            source_type = "local_path"
+            # Generate date-based version for auto-detected local paths
+            version = datetime.now().strftime("local-%Y-%m-%d")
         else:
             # Try sitemap by default with warning
             source_type = "sitemap"
@@ -217,7 +299,15 @@ def add(
                 f"Could not reliably detect source type for {final_source}. Defaulting to sitemap."
             )
 
-    if version is not None and version != DEFAULT_LIBRARY_VERSION:
+    # At this point, source_type and final_source should be resolved
+    # - source_type: one of "sitemap", "git_repo", or "local_path"
+    # - final_source: the actual URL/path to use for extraction
+
+    if (
+        version is not None
+        and version != DEFAULT_LIBRARY_VERSION
+        and version != datetime.now().strftime("local-%Y-%m-%d")
+    ):
         if source_type != "git_repo":
             error(
                 f"--version can only be used for git repo sources. Detected source type '{source_type}' is not a git repo."
@@ -251,6 +341,7 @@ def add(
         print(f"Library '{library}' version '{version}' already exists.")
         print("Performing extraction and incremental update...")
 
+    # Step 3: Run the appropriate extraction based on source_type
     async def _run_extract():
         if source_type == "sitemap":
             with console.status("[bold green]"):
@@ -272,6 +363,16 @@ def add(
             await extract_repo(
                 repo_url=final_source,
                 docs_paths=final_docs_paths if final_docs_paths else ["/"],
+                output_dir=output_dir,
+                library_name=library,
+                version=version,
+            )
+        elif source_type == "local_path":
+            with console.status("[bold green]"):
+                from openground.extract.local_path import extract_local_path
+
+            await extract_local_path(
+                local_path=Path(final_source).expanduser(),
                 output_dir=output_dir,
                 library_name=library,
                 version=version,
@@ -351,6 +452,8 @@ def add(
             new_source_config["repo_url"] = final_source
             if final_docs_paths:
                 new_source_config["docs_paths"] = final_docs_paths
+        elif source_type == "local_path":
+            new_source_config["local_path"] = final_source
 
         save_source_to_sources(library, new_source_config)
         success(f"Added source for '{library}' to ~/.openground/sources.json")
@@ -568,6 +671,7 @@ def query_cmd(
 def list_libraries_cmd():
     """List available libraries and their versions stored in the local db."""
     from rich.console import Console
+    from rich.table import Table
 
     console = Console()
     with console.status("[bold green]"):
@@ -587,9 +691,15 @@ def list_libraries_cmd():
         print("No libraries found.")
         return
 
+    table = Table(title="Available Libraries")
+    table.add_column("Library", style="cyan", no_wrap=True)
+    table.add_column("Versions", style="green")
+
     for lib_name, versions in libraries_with_versions.items():
         versions_str = ", ".join(versions)
-        print(f"{lib_name}: {versions_str}")
+        table.add_row(lib_name, versions_str)
+
+    console.print(table)
 
 
 @app.command("list-raw-libraries")

@@ -182,13 +182,13 @@ def test_get_library_config_fallback(mock_user_source_file, tmp_path):
     config, path = get_library_config("project-lib")
     assert config is not None
     assert path == project_file
-    assert config["type"] == "sitemap"
+    assert config.get("type") == "sitemap"
 
     # 2. Should fallback to user sources
     config, path = get_library_config("user-lib")
     assert config is not None
     assert path == user_file
-    assert config["type"] == "git_repo"
+    assert config.get("type") == "git_repo"
 
     # 3. Should not find
     config, path = get_library_config("missing-lib")
@@ -212,6 +212,7 @@ def test_project_local_priority(mock_user_source_file):
 
     # get_library_config should find project-local first
     config, path = get_library_config("lib1")
-    assert config["type"] == "git_repo"
-    assert config["repo_url"] == "project-url"
+    assert config is not None
+    assert config.get("type") == "git_repo"
+    assert config.get("repo_url") == "project-url"
     assert path == project_file

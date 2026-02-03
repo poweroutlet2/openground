@@ -2,10 +2,9 @@
 Tests for the update feature.
 Tests the incremental update logic that compares, syncs, and updates documentation.
 """
-import hashlib
+
 import json
-from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 import lancedb
@@ -15,11 +14,8 @@ from openground.update import (
     load_existing_pages_hashes,
     compare_pages,
     perform_update,
-    PageDiff,
-    UpdateSummary,
 )
 from openground.extract.common import ParsedPage
-from openground.config import get_effective_config
 
 
 class TestComputeContentHash:
@@ -47,7 +43,6 @@ class TestComputeContentHash:
 
         # Assert: Different content should produce different hashes
         assert hash1 != hash2
-
 
 
 class TestLoadExistingPageHashes:
@@ -99,7 +94,7 @@ class TestLoadExistingPageHashes:
             title="Valid",
             description="Valid page",
             last_modified=None,
-            content="Valid content"
+            content="Valid content",
         )
         with open(lib_dir / "valid.json", "w") as f:
             json.dump(valid_page, f)
@@ -136,9 +131,7 @@ class TestComparePages:
     def test_identifies_deleted_pages(self, sample_pages):
         """Should identify URLs in existing but not extracted."""
         # Arrange: Existing page not in extracted set
-        existing = {
-            "https://example.com/old-page": compute_content_hash("old content")
-        }
+        existing = {"https://example.com/old-page": compute_content_hash("old content")}
 
         # Act: Compare pages
         diff = compare_pages(sample_pages, existing)
@@ -166,8 +159,7 @@ class TestComparePages:
         """Should identify pages with same content hash."""
         # Arrange: Existing pages have same content (same hash)
         existing = {
-            page["url"]: compute_content_hash(page["content"])
-            for page in sample_pages
+            page["url"]: compute_content_hash(page["content"]) for page in sample_pages
         }
 
         # Act: Compare pages
@@ -217,7 +209,7 @@ class TestPerformUpdate:
             title="Existing",
             description="Existing page",
             last_modified=None,
-            content="Existing content"
+            content="Existing content",
         )
         with open(lib_dir / "existing.json", "w") as f:
             json.dump(existing_page, f)
@@ -416,26 +408,31 @@ class TestDeleteUrls:
     def test_delete_urls_escaping(self, temp_db_path):
         """Should properly escape special characters in URLs."""
         from openground.query import delete_urls
-        import lancedb
         import pyarrow as pa
 
         # Arrange: Create test table with URL containing special characters
         db = lancedb.connect(str(temp_db_path))
-        schema = pa.schema([
-            pa.field("url", pa.string()),
-            pa.field("library_name", pa.string()),
-            pa.field("version", pa.string()),
-            pa.field("content", pa.string()),
-        ])
+        schema = pa.schema(
+            [
+                pa.field("url", pa.string()),
+                pa.field("library_name", pa.string()),
+                pa.field("version", pa.string()),
+                pa.field("content", pa.string()),
+            ]
+        )
         table = db.create_table("test_table", data=[], schema=schema)
 
         special_url = "https://example.com/page?foo=bar&baz=qux'test"
-        table.add([{
-            "url": special_url,
-            "library_name": "testlib",
-            "version": "latest",
-            "content": "test",
-        }])
+        table.add(
+            [
+                {
+                    "url": special_url,
+                    "library_name": "testlib",
+                    "version": "latest",
+                    "content": "test",
+                }
+            ]
+        )
 
         # Act: Delete the URL with special characters
         count = delete_urls(

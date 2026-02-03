@@ -4,9 +4,10 @@ from typing import TypedDict, Literal
 
 
 class LibrarySource(TypedDict, total=False):
-    type: Literal["sitemap", "git_repo"]
+    type: Literal["sitemap", "git_repo", "local_path"]
     sitemap_url: str
     repo_url: str
+    local_path: str
     filter_keywords: list[str]
     languages: list[str]
     docs_paths: list[str]

@@ -57,7 +57,7 @@ def check_gpu_compatibility() -> None:
     functional_gpu = False
     try:
         import onnxruntime as ort
-        
+
         functional_gpu = "CUDAExecutionProvider" in ort.get_available_providers()
     except ImportError:
         pass
@@ -74,7 +74,9 @@ def check_gpu_compatibility() -> None:
         warning("   uv tool install 'openground[fastembed]'\n")
 
     elif gpu_hardware and has_gpu_pkg and not functional_gpu:
-        error("\nError: GPU package is installed but CUDA is not functional. Your options are:")
+        error(
+            "\nError: GPU package is installed but CUDA is not functional. Your options are:"
+        )
         error(
             "  1. Ensure your CUDA drivers and cuDNN match the requirements for onnxruntime-gpu."
         )
@@ -82,14 +84,17 @@ def check_gpu_compatibility() -> None:
             "   See: https://oliviajain.github.io/onnxruntime/docs/execution-providers/CUDA-ExecutionProvider.html\n"
         )
         error("  2. Install the CPU version: uv tool install 'openground[fastembed]'")
-        error("  3. If you still want gpu performance, you can install the more bulky" 
-                "sentence-transformers backend: uv tool install 'openground[sentence-transformers]'")
+        error(
+            "  3. If you still want gpu performance, you can install the more bulky"
+            "sentence-transformers backend: uv tool install 'openground[sentence-transformers]'"
+        )
+
 
 @lru_cache(maxsize=1)
 def get_fastembed_model(model_name: str, use_cuda: bool = True):
     """Get a cached instance of TextEmbedding (fastembed)."""
     try:
-        from fastembed import TextEmbedding 
+        from fastembed import TextEmbedding
     except ImportError:
         raise ImportError(
             "The 'fastembed' backend is not installed. "

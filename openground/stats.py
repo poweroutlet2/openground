@@ -41,9 +41,7 @@ def get_default_stats() -> StatsJson:
     )
 
 
-def load_stats(
-    db_path: Path | None = None, table_name: str | None = None
-) -> StatsJson:
+def load_stats(db_path: Path | None = None, table_name: str | None = None) -> StatsJson:
     """Load statistics from the stats file.
 
     Args:
@@ -188,4 +186,3 @@ def reset_stats() -> None:
     stats["libraries_count"] = default["libraries_count"]
     stats["total_chunks"] = default["total_chunks"]
     save_stats(stats)
-
