@@ -179,35 +179,40 @@ async def extract_repo(
 
         # Sparse checkout configuration
 
-        # Normalize docs_paths
+        # Normalize docs_paths - detect if user wants the entire repo
+        # Empty docs_paths means entire repo by default
         git_docs_paths = []
+        wants_entire_repo = not docs_paths  # Empty list = entire repo
         for path in docs_paths:
             gp = path.strip("/")
-            if not gp or path == "/":
-                git_docs_paths = ["*"]
+            if not gp or path == "/" or gp == ".":
+                wants_entire_repo = True
                 break
             git_docs_paths.append(gp)
 
-        if not git_docs_paths:
-            git_docs_paths = ["*"]
-
-        print(f"Setting sparse-checkout to: {', '.join(git_docs_paths)}")
+        # If entire repo is requested, skip sparse-checkout for full checkout
+        if wants_entire_repo:
+            print("Checking out entire repository (no sparse-checkout)...")
+        else:
+            print(f"Setting sparse-checkout to: {', '.join(git_docs_paths)}")
 
         try:
-            subprocess.run(
-                ["git", "sparse-checkout", "init", "--cone"],
-                cwd=temp_path,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            subprocess.run(
-                ["git", "sparse-checkout", "set"] + git_docs_paths,
-                cwd=temp_path,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            # Only set up sparse-checkout if we're not getting the entire repo
+            if not wants_entire_repo:
+                subprocess.run(
+                    ["git", "sparse-checkout", "init", "--cone"],
+                    cwd=temp_path,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                subprocess.run(
+                    ["git", "sparse-checkout", "set"] + git_docs_paths,
+                    cwd=temp_path,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
         except subprocess.CalledProcessError as e:
             error(f"Failed to set sparse-checkout: {e.stderr}")
             return
@@ -230,9 +235,11 @@ async def extract_repo(
 
         # Collect all documentation files from all requested paths
         all_doc_files = []
-        if "*" in git_docs_paths:
+        if wants_entire_repo:
+            # Entire repo - search from temp_path root
             all_doc_files.extend(filter_documentation_files(temp_path))
         else:
+            # Specific paths - search each path
             for gp in git_docs_paths:
                 search_dir = temp_path / gp
                 if search_dir.exists():
@@ -242,7 +249,8 @@ async def extract_repo(
         doc_files = sorted(list(set(all_doc_files)))
 
         if not doc_files:
-            error(f"No documentation files found in paths: {', '.join(git_docs_paths)}")
+            path_msg = "entire repository" if wants_entire_repo else f"paths: {', '.join(git_docs_paths)}"
+            error(f"No documentation files found in {path_msg}")
             return
 
         print(f"Processing {len(doc_files)} files...")

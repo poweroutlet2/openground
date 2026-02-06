@@ -163,7 +163,7 @@ def add(
         [],
         "--docs-path",
         "-d",
-        help="Path to documentation within a git repo. Specify multiple times for multiple paths (e.g., -d docs/ -d wiki/). Defaults to '/' if not specified.",
+        help="Path to documentation within a git repo. Specify multiple times for multiple paths (e.g., -d docs/ -d wiki/). If not specified, indexes the entire repository.",
     ),
     filter_keywords: list[str] = typer.Option(
         [],
@@ -283,8 +283,7 @@ def add(
                     final_docs_paths = [doc_path]
 
             source_type = "git_repo"
-            if not final_docs_paths:
-                final_docs_paths = ["/"]
+            # Keep final_docs_paths empty to index entire repo by default
         elif final_source.endswith(".xml") or "sitemap" in final_source.lower():
             source_type = "sitemap"
         elif is_local_path(final_source):
@@ -362,7 +361,7 @@ def add(
 
             await extract_repo(
                 repo_url=final_source,
-                docs_paths=final_docs_paths if final_docs_paths else ["/"],
+                docs_paths=final_docs_paths,
                 output_dir=output_dir,
                 library_name=library,
                 version=version,

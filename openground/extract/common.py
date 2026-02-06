@@ -63,10 +63,18 @@ def filter_documentation_files(
         for file in files:
             file_path = Path(root) / file
 
-            # Check if file has allowed extension
             if file_path.suffix.lower() in allowed_extensions:
-                # Skip hidden files and common non-doc files
-                if not file.startswith(".") and file not in {
+                # Skip hidden files
+                if file.startswith("."):
+                    continue
+
+                # Always include README files (regardless of other filtering)
+                if file.upper().startswith("README"):
+                    doc_files.append(file_path)
+                    continue
+
+                # Skip common non-doc files
+                if file not in {
                     "LICENSE",
                     "CHANGELOG",
                     "AUTHORS",
