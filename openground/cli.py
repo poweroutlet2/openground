@@ -23,8 +23,8 @@ from openground.config import (
     DEFAULT_LIBRARY_VERSION,
 )
 from openground.console import success, error, hint, warning
-from openground.extract.source import get_library_config
-from openground.query import library_version_exists
+from openground.extract.source import get_library_config, load_source_file
+from openground.query import library_version_exists, list_libraries_with_versions
 
 
 def is_local_path(source: str) -> bool:
@@ -341,7 +341,7 @@ def add(
         print("Performing extraction and incremental update...")
 
     # Step 3: Run the appropriate extraction based on source_type
-    async def _run_extract():
+    async def _run_extract(extract_to_dir: Path):
         if source_type == "sitemap":
             with console.status("[bold green]"):
                 from openground.extract.sitemap import extract_pages as extract_main
@@ -350,7 +350,7 @@ def add(
                 sitemap_url=final_source,
                 concurrency_limit=config["extraction"]["concurrency_limit"],
                 library_name=library,
-                output_dir=output_dir,
+                output_dir=extract_to_dir,
                 filter_keywords=final_filter_keywords,
                 version=version,
                 trim_query_params=trim_query_params,
@@ -362,7 +362,7 @@ def add(
             await extract_repo(
                 repo_url=final_source,
                 docs_paths=final_docs_paths,
-                output_dir=output_dir,
+                output_dir=extract_to_dir,
                 library_name=library,
                 version=version,
             )
@@ -372,7 +372,7 @@ def add(
 
             await extract_local_path(
                 local_path=Path(final_source).expanduser(),
-                output_dir=output_dir,
+                output_dir=extract_to_dir,
                 library_name=library,
                 version=version,
             )
@@ -380,7 +380,57 @@ def add(
     with console.status("[bold green]"):
         from openground.ingest import ingest_to_lancedb, load_parsed_pages
 
-    asyncio.run(_run_extract())
+    # For existing libraries, extract to temp directory for comparison
+    # For new libraries, extract directly to output_dir
+    if library_exists:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_extract_dir = Path(temp_dir)
+            asyncio.run(_run_extract(temp_extract_dir))
+
+            # Verify extraction completed
+            if not temp_extract_dir.exists():
+                raise typer.BadParameter(
+                    f"Extraction completed but temp directory not found at {temp_extract_dir}."
+                )
+
+            page_count = len(list(temp_extract_dir.glob("*.json")))
+            success(f"\nExtraction complete: {page_count} pages extracted")
+
+            from openground.update import perform_update
+
+            # Load newly extracted pages from temp directory
+            pages = load_parsed_pages(temp_extract_dir)
+
+            try:
+                summary = perform_update(
+                    extracted_pages=pages,
+                    library_name=library,
+                    version=version,
+                    db_path=db_path,
+                    table_name=table_name,
+                    raw_data_dir=output_dir,  # Permanent directory with existing files
+                )
+
+                print("\nUpdate Summary:")
+                print(f"  Added: {summary['added']} pages")
+                print(f"  Modified: {summary['modified']} pages")
+                print(f"  Deleted: {summary['deleted']} pages")
+                print(f"  Unchanged: {summary['unchanged']} pages")
+
+                if summary["added"] + summary["modified"] + summary["deleted"] == 0:
+                    success("No changes detected. Nothing to update.")
+                    return
+
+                success(f"Update complete: {library} ({version}) updated.")
+                return
+            except ValueError as e:
+                if "produced no pages" in str(e):
+                    error(f"{e}")
+                    raise typer.Exit(1)
+                raise
+    else:
+        # New library - extract directly to output_dir
+        asyncio.run(_run_extract(output_dir))
 
     # Embed
     if not output_dir.exists():
@@ -390,39 +440,6 @@ def add(
 
     page_count = len(list(output_dir.glob("*.json")))
     success(f"\nExtraction complete: {page_count} pages extracted to {output_dir}")
-
-    if library_exists:
-        from openground.update import perform_update
-
-        pages = load_parsed_pages(output_dir)
-
-        try:
-            summary = perform_update(
-                extracted_pages=pages,
-                library_name=library,
-                version=version,
-                db_path=db_path,
-                table_name=table_name,
-                raw_data_dir=output_dir,
-            )
-
-            print("\nUpdate Summary:")
-            print(f"  Added: {summary['added']} pages")
-            print(f"  Modified: {summary['modified']} pages")
-            print(f"  Deleted: {summary['deleted']} pages")
-            print(f"  Unchanged: {summary['unchanged']} pages")
-
-            if summary["added"] + summary["modified"] + summary["deleted"] == 0:
-                success("No changes detected. Nothing to update.")
-                return
-
-            success(f"Update complete: {library} ({version}) updated.")
-            return
-        except ValueError as e:
-            if "produced no pages" in str(e):
-                error(f"{e}")
-                raise typer.Exit(1)
-            raise
 
     if not yes:
         print("\nPress Enter to continue with embedding, or Ctrl+C to exit...")
@@ -462,14 +479,84 @@ def add(
         )
 
 
+def _update_all_libraries() -> None:
+    """
+    Update all libraries that have sources configured.
+
+    Updates all versions of each library and displays a consolidated summary.
+    Continues on error if one library update fails.
+    """
+    # Load sources configuration
+    sources = load_source_file()
+
+    if not sources:
+        warning("No libraries with sources found.")
+        return
+
+    # Get all libraries with versions from LanceDB
+    config = get_effective_config()
+    db_path = Path(config["db_path"]).expanduser()
+    table_name = config["table_name"]
+    all_libraries = list_libraries_with_versions(db_path, table_name)
+
+    if not all_libraries:
+        warning("No libraries found in database.")
+        return
+
+    # Filter to only libraries that have sources configured
+    libraries_to_update = {name: versions for name, versions in all_libraries.items() if name in sources}
+
+    if not libraries_to_update:
+        warning("No libraries with configured sources found in database.")
+        return
+
+    # Track results
+    total_versions = sum(len(versions) for versions in libraries_to_update.values())
+    successful_count = 0
+    failures: list[tuple[str, str, str]] = []  # (library, version, error_message)
+
+    # Update each library and each version
+    for library_name, versions in libraries_to_update.items():
+        for version in versions:
+            try:
+                add(
+                    library=library_name,
+                    source=None,  # Use configured source
+                    version=version,
+                    docs_paths=[],
+                    filter_keywords=[],
+                    yes=True,  # Skip prompts
+                    sources_file=None,
+                    trim_query_params=False,
+                )
+                successful_count += 1
+            except Exception as e:
+                error_msg = str(e)
+                failures.append((library_name, version, error_msg))
+
+    # Display consolidated summary
+    print()
+    success("Update Summary for All Libraries:")
+    print(f"  Processed: {total_versions} library versions across {len(libraries_to_update)} libraries")
+    print(f"  Successful: {successful_count}")
+    print(f"  Failed: {len(failures)}")
+
+    if failures:
+        print()
+        error("Failures:")
+        for lib_name, version, err_msg in failures:
+            print(f"  - {lib_name} (v{version}): {err_msg}")
+
+
 @app.command("update")
 def update_library(
-    library: str = typer.Argument(..., help="Name of the library to update."),
+    library: Optional[str] = typer.Argument(None, help="Name of the library to update."),
     version: str = typer.Option("latest", "--version", "-v", help="Version to update."),
     source: Optional[str] = typer.Option(
         None, "--source", "-s", help="Override source URL."
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip prompts."),
+    all_libraries: bool = typer.Option(False, "--all", help="Update all libraries with sources."),
 ):
     """
     Update an existing library with changes from the source.
@@ -477,6 +564,22 @@ def update_library(
     Efficiently updates only changed pages by comparing content hashes.
     This is an alias for the add command when a library already exists.
     """
+    # Validate --all flag combinations
+    if all_libraries:
+        if source is not None:
+            error("--all cannot be used with --source")
+            raise typer.Exit(1)
+        if version != "latest":
+            error("--all cannot be used with --version")
+            raise typer.Exit(1)
+        _update_all_libraries()
+        return
+
+    # Require library argument if not using --all
+    if library is None:
+        error("Either provide a library name or use --all to update all libraries")
+        raise typer.Exit(1)
+
     add(
         library=library,
         source=source,
