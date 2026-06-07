@@ -13,6 +13,7 @@ from pathlib import Path
 from fastmcp import FastMCP
 
 from openground.config import get_effective_config
+from openground.embeddings import require_any_embedding_backend, warn_if_no_embedding_backend
 from openground.query import (
     get_full_content,
     list_libraries_with_versions,
@@ -162,6 +163,7 @@ def get_full_content_tool(url: str, version: str) -> str:
 
 def run_server():
     """Entry point for the MCP server."""
+    require_any_embedding_backend()
     threading.Thread(target=_pre_load_resources, daemon=True).start()
 
     mcp.run(transport="stdio")

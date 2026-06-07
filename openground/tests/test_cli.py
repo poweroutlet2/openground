@@ -77,6 +77,7 @@ def test_add_git_source_creates_raw_data(temp_config_dir, mock_config):
 
     # Mock the extraction and ingestion pipeline to avoid network calls
     with (
+        patch("openground.cli.require_any_embedding_backend"),
         patch("openground.extract.git.extract_repo", side_effect=mock_extract_repo),
         patch("openground.ingest.ingest_to_lancedb"),
         patch("openground.ingest.load_parsed_pages", return_value=[]),
@@ -108,6 +109,7 @@ def test_add_sitemap_source_creates_raw_data(temp_config_dir, mock_config):
 
     # Mock the extraction and ingestion pipeline to avoid network calls
     with (
+        patch("openground.cli.require_any_embedding_backend"),
         patch(
             "openground.extract.sitemap.extract_pages", side_effect=mock_extract_pages
         ),
@@ -524,6 +526,7 @@ class TestAddUpdateDetection:
             (output_dir / "test.json").write_text('{"url": "https://example.com"}')
 
         with (
+            patch("openground.cli.require_any_embedding_backend"),
             patch(
                 "openground.extract.sitemap.extract_pages",
                 side_effect=mock_extract_pages,
@@ -585,6 +588,7 @@ class TestAddUpdateDetection:
             (output_dir / "test.json").write_text('{"url": "https://example.com"}')
 
         with (
+            patch("openground.cli.require_any_embedding_backend"),
             patch(
                 "openground.extract.sitemap.extract_pages",
                 side_effect=mock_extract_pages,
@@ -683,6 +687,7 @@ class TestAddUpdateDetection:
         # Note: We can't test the full update flow due to fastembed import issues
         # But we can verify the detection logic works correctly
         with (
+            patch("openground.cli.require_any_embedding_backend"),
             patch(
                 "openground.extract.sitemap.extract_pages",
                 side_effect=mock_extract_pages,
@@ -898,6 +903,7 @@ class TestLocalPathExtraction:
 
         # Mock the ingestion to avoid embedding overhead
         with (
+            patch("openground.cli.require_any_embedding_backend"),
             patch("openground.ingest.ingest_to_lancedb"),
             patch("openground.ingest.load_parsed_pages", return_value=[]),
         ):
@@ -949,6 +955,7 @@ class TestLocalPathExtraction:
 
         # Mock the ingestion
         with (
+            patch("openground.cli.require_any_embedding_backend"),
             patch("openground.ingest.ingest_to_lancedb"),
             patch("openground.ingest.load_parsed_pages", return_value=[]),
         ):
@@ -1038,6 +1045,7 @@ class TestLocalPathExtraction:
 
         # Mock the ingestion to avoid embedding overhead
         with (
+            patch("openground.cli.require_any_embedding_backend"),
             patch("openground.ingest.ingest_to_lancedb"),
             patch("openground.ingest.load_parsed_pages", return_value=[]),
         ):

@@ -11,6 +11,50 @@ from openground.config import get_effective_config
 from openground.console import error, hint, warning
 
 
+def has_any_embedding_backend() -> bool:
+    """Return True if at least one embedding backend is installed."""
+    try:
+        import fastembed  # noqa: F401
+
+        return True
+    except ImportError:
+        pass
+
+    try:
+        import sentence_transformers  # noqa: F401
+        import torch  # noqa: F401
+
+        return True
+    except ImportError:
+        pass
+
+    return False
+
+
+def warn_if_no_embedding_backend() -> None:
+    """Warn, but do not fail, if no embedding backend is installed."""
+    if has_any_embedding_backend():
+        return
+
+    warning("Warning: openground installed without embeddings.\n")
+
+
+def require_any_embedding_backend() -> None:
+    """Exit with a clear error if no embedding backend is installed."""
+    if has_any_embedding_backend():
+        return
+
+    error(
+        "Error: openground installed without embeddings.\n\n"
+        "To perform this command, install one of:\n\n"
+        "  uv tool install openground[fastembed-cpu]\n"
+        "  uv tool install openground[fastembed-gpu]\n"
+        "  uv tool install openground[sentence-transformers]\n"
+
+    )
+    raise SystemExit(1)
+
+
 @lru_cache(maxsize=1)
 def get_st_model(model_name: str):
     """Get a cached instance of SentenceTransformer."""
@@ -71,7 +115,7 @@ def check_gpu_compatibility() -> None:
             "\nWarning: openground[fastembed-gpu] is installed but no NVIDIA GPU was detected."
         )
         warning("   You may want to switch to the CPU version:")
-        warning("   uv tool install 'openground[fastembed]'\n")
+        warning("   uv tool install 'openground[fastembed-cpu]'\n")
 
     elif gpu_hardware and has_gpu_pkg and not functional_gpu:
         error(
@@ -83,7 +127,7 @@ def check_gpu_compatibility() -> None:
         error(
             "   See: https://oliviajain.github.io/onnxruntime/docs/execution-providers/CUDA-ExecutionProvider.html\n"
         )
-        error("  2. Install the CPU version: uv tool install 'openground[fastembed]'")
+        error("  2. Install the CPU version: uv tool install 'openground[fastembed-cpu]'")
         error(
             "  3. If you still want gpu performance, you can install the more bulky"
             "sentence-transformers backend: uv tool install 'openground[sentence-transformers]'"

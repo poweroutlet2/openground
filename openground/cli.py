@@ -23,6 +23,11 @@ from openground.config import (
     DEFAULT_LIBRARY_VERSION,
 )
 from openground.console import success, error, hint, warning
+from openground.embeddings import (
+    has_any_embedding_backend,
+    require_any_embedding_backend,
+    warn_if_no_embedding_backend,
+)
 from openground.extract.source import get_library_config, load_source_file
 from openground.query import library_version_exists, list_libraries_with_versions
 
@@ -124,6 +129,10 @@ def ensure_config_exists(ctx: typer.Context):
     # Load the effective config (now that we know it exists)
     get_effective_config()
 
+    command = ctx.invoked_subcommand
+    if command not in {"add", "embed", "query"}:
+        warn_if_no_embedding_backend()
+
     # Notify user if we just created it
     if not file_existed and config_path.exists():
         success(f"Config file created at {config_path}\n")
@@ -197,6 +206,8 @@ def add(
     For git and local path sources, the following file extensions are parsed: .md, .rst, .txt, .mdx, .ipynb, .html, .htm
     """
     from rich.console import Console
+
+    require_any_embedding_backend()
 
     console = Console()
     config = get_effective_config()
@@ -706,6 +717,8 @@ def embed(
     """Chunk documents, generate embeddings, and embed into the local db."""
     from rich.console import Console
 
+    require_any_embedding_backend()
+
     console = Console()
     with console.status("[bold green]"):
         from openground.ingest import ingest_to_lancedb, load_parsed_pages
@@ -742,6 +755,8 @@ def query_cmd(
 ):
     """Run a hybrid search (semantic + BM25) against the local db."""
     from openground.query import search
+
+    require_any_embedding_backend()
 
     # Get config
     config = get_effective_config()
