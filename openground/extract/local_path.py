@@ -51,7 +51,11 @@ async def extract_local_path(
     print(f"Processing {len(doc_files)} files...")
 
     def make_file_url(file_path: Path) -> str:
-        return f"file://{file_path}"
+        # as_uri() yields a valid file:// URL with forward slashes and percent
+        # encoding. Hand rolling "file://{path}" produced a malformed URL on
+        # Windows ("file://C:\..."), which urlparse could not read, so every
+        # page collapsed onto the same slug and overwrote its siblings.
+        return file_path.as_uri()
 
     results = await process_documentation_files(
         doc_files=doc_files,

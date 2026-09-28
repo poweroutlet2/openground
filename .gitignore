@@ -216,3 +216,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 .python-version
+
+#opencode
+.opencode/

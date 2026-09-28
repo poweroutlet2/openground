@@ -4,23 +4,33 @@ Run this FIRST to ensure tests won't touch your real data.
 """
 
 from pathlib import Path
-from openground.config import get_data_home, get_config_path
+from openground.config import (
+    get_data_home,
+    get_config_path,
+    get_default_config,
+)
 
 
 def test_data_dir_is_sandboxed():
     """Verify data directory points to temp location, not real user home."""
-    current_path = str(get_data_home())
+    current = Path(get_data_home())
 
     # Should contain openground
-    assert "openground" in current_path
+    assert "openground" in str(current)
 
     # Should be in pytest's temp directory
-    assert "pytest" in current_path or "tmp" in current_path
+    assert "pytest" in str(current) or "tmp" in str(current)
 
-    # Should NOT be the real user home
-    real_home = str(Path.home())
-    assert not current_path.startswith(real_home + "/.local")
-    assert not current_path.startswith(real_home + "\\AppData\\Local")
+    # Should NOT live inside the real data home. Comparing against the real
+    # data home itself (not against Path.home()) is what makes this valid on
+    # Windows, where pytest's tmp_path already sits under %LOCALAPPDATA%\Temp
+    # and therefore inside the user home.
+    real_data_home = Path(get_default_config()["raw_data_dir"]).parent
+
+    assert current != real_data_home
+    assert not current.is_relative_to(real_data_home), (
+        f"sandboxed data dir leaked into the real data home: {current}"
+    )
 
 
 def test_config_dir_is_sandboxed():

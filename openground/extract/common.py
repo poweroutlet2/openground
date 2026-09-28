@@ -1,5 +1,7 @@
 from typing import TypedDict, Callable
 from pathlib import Path
+import hashlib
+import re
 import shutil
 import json
 import os
@@ -7,6 +9,20 @@ import asyncio
 from urllib.parse import urlparse
 from tqdm import tqdm
 import nbformat
+
+# Windows refuses paths longer than 260 characters (MAX_PATH), so raw data file
+# names have to leave room for the output directory and the ".json" suffix.
+MAX_PATH_LIMIT = 255
+
+# Characters Windows forbids in a file name, plus control characters.
+ILLEGAL_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+# Device names Windows reserves, even with an extension appended.
+RESERVED_WINDOWS_NAMES = frozenset(
+    ["CON", "PRN", "AUX", "NUL"]
+    + [f"COM{i}" for i in range(1, 10)]
+    + [f"LPT{i}" for i in range(1, 10)]
+)
 
 
 class ParsedPage(TypedDict):
@@ -227,6 +243,66 @@ async def process_documentation_files(
     return results
 
 
+def build_file_slug(url: str, max_length: int = 120) -> str:
+    """
+    Build a safe, unique and length bounded file name from a page URL.
+
+    The slug is used as the raw data file name, so it has to survive Windows:
+    both slash flavours become hyphens and the characters Windows forbids are
+    dropped. URLs that carry no usable path (a bare ``file://`` URL, for
+    instance) fall back to ``home``.
+
+    When the slug is longer than ``max_length`` it is truncated and a short
+    digest of the full URL is appended. Without that digest two long paths
+    sharing a prefix would collapse onto the same file and silently overwrite
+    each other, which is the exact failure this function guards against.
+
+    Args:
+        url: The page URL.
+        max_length: Maximum length of the returned slug, before ".json".
+
+    Returns:
+        A file name safe to create on Windows, macOS and Linux.
+    """
+    path = urlparse(url).path
+    # Strip the separators before the substitution, otherwise the leading "/"
+    # of an absolute path would be turned into a stray leading hyphen.
+    stripped = path.strip("/\\")
+    if not stripped:
+        return "home"
+
+    slug = ILLEGAL_FILENAME_CHARS.sub("-", stripped).strip(" .") or "home"
+
+    if len(slug) > max_length:
+        digest = hashlib.sha256(url.encode("utf-8", errors="replace")).hexdigest()[:8]
+        keep = max(1, max_length - len(digest) - 1)
+        slug = f"{slug[:keep]}-{digest}"
+
+    # Windows drops trailing dots and spaces, which can turn two distinct
+    # slugs into the same file.
+    slug = slug.rstrip(" .") or "home"
+
+    # A reserved device name such as "NUL" is invalid even as "NUL.json".
+    if slug.split(".")[0].upper() in RESERVED_WINDOWS_NAMES:
+        slug = f"_{slug}"
+
+    return slug
+
+
+def slug_length_budget(output_dir: Path) -> int:
+    """
+    Compute how many characters a slug may use under ``output_dir``.
+
+    Args:
+        output_dir: The directory the JSON files will be written to.
+
+    Returns:
+        The maximum slug length, never below a small usable floor.
+    """
+    reserved = len(str(output_dir)) + len(os.sep) + len(".json")
+    return max(32, MAX_PATH_LIMIT - reserved)
+
+
 async def save_results(results: list[ParsedPage], output_dir: Path):
     """
     Save the results to a file.
@@ -248,11 +324,14 @@ async def save_results(results: list[ParsedPage], output_dir: Path):
 
     valid_results = [r for r in results if r is not None]
 
+    max_length = slug_length_budget(output_dir)
+
     for result in tqdm(
         valid_results, desc="Writing structured raw data files", unit="file"
     ):
-        slug = urlparse(result["url"]).path.strip("/").replace("/", "-") or "home"
+        slug = build_file_slug(result["url"], max_length=max_length)
         file_name = output_dir / f"{slug}.json"
+        file_name.parent.mkdir(parents=True, exist_ok=True)
         with open(file_name, "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2)
 

@@ -27,7 +27,29 @@ DEFAULT_LIBRARY_NAME = "openground_docs"
 
 # Extraction defaults
 SITEMAP_URL = "https://docs.openground.ai/sitemap.xml"
-CONCURRENCY_LIMIT = 50
+
+# Politeness / resilience defaults.
+# Concurrency is intentionally low: documentation sites such as
+# learn.microsoft.com rate limit aggressively and answer 429 when a client
+# bursts hundreds of requests, which used to drop entire pages silently.
+CONCURRENCY_LIMIT = 5
+
+# Hard ceiling, applied even when a config file still carries an older, larger
+# concurrency_limit. Without it the fix would only reach fresh installs.
+MAX_CONCURRENT_REQUESTS = 5
+
+REQUEST_TIMEOUT = 30
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 1.0
+RETRY_BACKOFF_MAX = 30.0
+
+# Minimum spacing between the start of two consecutive requests.
+# The concurrency limit caps how many requests are in flight; this caps how
+# fast they are launched, which is what aggressive anti-scraping gateways
+# (learn.microsoft.com, Cloudflare) actually measure.
+REQUEST_MIN_INTERVAL = 0.2
+
+USER_AGENT = "openground-docs-scraper (+https://github.com/rafaelsouzars/openground)"
 
 
 DEFAULT_RAW_DATA_DIR_BASE = get_data_home() / "raw_data"
@@ -149,6 +171,12 @@ def get_default_config() -> dict[str, Any]:
         "raw_data_dir": str(DEFAULT_RAW_DATA_DIR_BASE),
         "extraction": {
             "concurrency_limit": CONCURRENCY_LIMIT,
+            "request_timeout": REQUEST_TIMEOUT,
+            "max_retries": MAX_RETRIES,
+            "retry_backoff_base": RETRY_BACKOFF_BASE,
+            "retry_backoff_max": RETRY_BACKOFF_MAX,
+            "request_min_interval": REQUEST_MIN_INTERVAL,
+            "user_agent": USER_AGENT,
         },
         "embeddings": {
             "batch_size": DEFAULT_BATCH_SIZE,
