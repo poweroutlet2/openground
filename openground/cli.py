@@ -1,10 +1,13 @@
 import functools
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 import typer
 
 from openground.console import UserError, error, success, warning
 from openground.install import Client
+
+if TYPE_CHECKING:
+    from openground.service import SyncResult
 
 app = typer.Typer(
     help="Index documentation into a local vector database and search it from AI agents.",
@@ -45,7 +48,7 @@ def main(
     pass
 
 
-def _report(result) -> None:
+def _report(result: "SyncResult") -> None:
     label = f"{result.library} ({result.version})"
     if result.error:
         error(f"{label}: {result.error}")
@@ -83,7 +86,7 @@ def add(
         help="Only index sitemap URLs containing this (repeatable).",
     ),
 ):
-    """Add a library. If this name and version are already stored, update it instead."""
+    """Add a library or a new version of one (updates in place if that exact version is stored)."""
     from openground.service import add_library
 
     _report(add_library(name, source, version, docs_paths, filter_keywords))
@@ -97,7 +100,7 @@ def update(
         help="Library to update. Omit to update every library with a remembered source.",
     ),
 ):
-    """Refresh libraries from their remembered sources."""
+    """Refresh stored libraries from their remembered sources."""
     from openground.service import update_libraries
 
     results = update_libraries(name)
@@ -144,7 +147,7 @@ def rm(
     ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
 ):
-    """Delete a library version and forget its source."""
+    """Delete a stored version (forgets the source with the last one)."""
     from openground.query import get_library_stats
     from openground.service import remove_library, resolve_version
 
@@ -171,7 +174,7 @@ def search(
         None, "--version", "-v", help="Limit to a version."
     ),
     top_k: Optional[int] = typer.Option(
-        None, "--top-k", "-k", help="Number of results."
+        None, "--top-k", "-k", min=1, help="Number of results."
     ),
 ):
     """Hybrid (semantic + keyword) search over stored docs."""
@@ -184,10 +187,8 @@ def search(
 @_handle_errors
 def serve():
     """Run the MCP server on stdio (same as `openground-mcp`)."""
-    from openground.config import get_settings
     from openground.server import run_server
 
-    get_settings()
     run_server()
 
 
@@ -199,14 +200,15 @@ def install_mcp(
     ),
     wsl: bool = typer.Option(False, "--wsl", help="Launch the server through wsl.exe."),
 ):
-    """Register the MCP server with an agent client."""
+    """Print or register the MCP server config."""
     from openground.install import install_to, mcp_config_json
 
     if client is None:
         typer.echo(mcp_config_json(wsl))
         typer.echo(
             "\nPaste this into your client's MCP config, or run "
-            "`openground install-mcp claude-code|cursor|opencode`."
+            "`openground install-mcp claude-code|cursor|opencode`.",
+            err=True,
         )
         return
     install_to(client, wsl)
@@ -219,6 +221,8 @@ def config():
     from openground.config import (
         get_config_path,
         get_data_home,
+        get_db_path,
+        get_raw_data_dir,
         get_settings,
         get_sources_path,
     )
@@ -231,8 +235,8 @@ def config():
     typer.echo("Edit it to change settings; delete it to reset.\n")
     settings = get_settings()
     typer.echo(settings.model_dump_json(indent=2))
-    typer.echo(f"\nDatabase:    {settings.db_path}")
-    typer.echo(f"Raw files:   {settings.raw_data_dir}")
+    typer.echo(f"\nDatabase:    {get_db_path()}")
+    typer.echo(f"Raw files:   {get_raw_data_dir()}")
     typer.echo(f"Stats:       {get_data_home() / 'stats.json'}")
     typer.echo(f"Sources:     {get_sources_path()}")
 
@@ -242,7 +246,7 @@ def config():
 def stats(
     reset: bool = typer.Option(False, "--reset", help="Zero the tool call counters."),
 ):
-    """Show MCP tool call counts."""
+    """Show library/chunk counts and MCP tool call counts."""
     from openground.query import count_chunks, list_libraries_with_versions
     from openground.stats import load_tool_calls, reset_stats
 
@@ -267,9 +271,12 @@ def reset(yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation
     from openground.service import reset_data
 
     if not yes:
-        typer.confirm(f"Delete everything in {get_data_home()}?", abort=True)
+        typer.confirm(
+            f"Delete all embeddings, raw files and stats in {get_data_home()}?",
+            abort=True,
+        )
     reset_data()
-    success("All local data deleted.")
+    success("Deleted embeddings, raw files and stats.")
 
 
 if __name__ == "__main__":

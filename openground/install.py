@@ -1,7 +1,6 @@
 """Register the openground MCP server with agent clients."""
 
 import json
-import platform
 import shutil
 import subprocess
 import tempfile
@@ -110,10 +109,7 @@ def _install_claude_code(command: list[str]) -> None:
 
 
 def _install_cursor(command: list[str]) -> None:
-    if platform.system() == "Windows":
-        path = Path.home() / "AppData" / "Roaming" / "Cursor" / "mcp.json"
-    else:
-        path = Path.home() / ".cursor" / "mcp.json"
+    path = Path.home() / ".cursor" / "mcp.json"
     _merge_into_json_file(path, "mcpServers", _mcp_servers_entry(command))
 
 

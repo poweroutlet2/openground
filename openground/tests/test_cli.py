@@ -4,7 +4,7 @@ import pytest
 from typer.testing import CliRunner
 
 from openground.cli import app
-from openground.config import get_config_path, get_data_home
+from openground.config import get_config_path, get_data_home, get_db_path
 from openground.query import list_libraries_with_versions
 from openground.sources import get_source
 from openground.tests.test_config import write_config
@@ -267,6 +267,34 @@ class TestSearch:
         assert result.exit_code == 1
         assert "openground reset" in result.output
 
+    @pytest.mark.parametrize("value", ["0", "-3"])
+    def test_top_k_must_be_positive(self, fake_source, value):
+        invoke("add", "lib", SITEMAP)
+        assert invoke("search", "guide", "-k", value).exit_code == 2
+
+    def test_results_show_relevance_and_the_real_tool_name(self, fake_source):
+        invoke("add", "lib", SITEMAP)
+
+        result = invoke("search", "guide")
+
+        assert "relevance=" in result.output
+        assert '"tool": "get_full_content_tool"' in result.output
+
+
+def test_search_hint_names_a_registered_mcp_tool(fake_source):
+    import asyncio
+
+    from openground.query import FULL_CONTENT_TOOL, search
+    from openground.server import mcp
+    from openground.service import add_library
+    from openground.stats import TOOLS
+
+    add_library("lib", SITEMAP)
+
+    assert FULL_CONTENT_TOOL in asyncio.run(mcp.get_tools())
+    assert FULL_CONTENT_TOOL in TOOLS
+    assert f'"tool": "{FULL_CONTENT_TOOL}"' in search("guide")
+
 
 class TestConfig:
     def test_shows_defaults_and_locations(self):
@@ -357,7 +385,7 @@ class TestReset:
         result = invoke("reset", "-y")
 
         assert result.exit_code == 0, result.output
-        assert not get_data_home().exists()
+        assert not get_db_path().exists()
 
     def test_reset_keeps_remembered_sources(self, fake_source):
         invoke("add", "lib", SITEMAP)

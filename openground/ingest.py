@@ -6,7 +6,7 @@ import pyarrow as pa
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from tqdm import tqdm
 
-from openground.config import TABLE_NAME, get_settings
+from openground.config import TABLE_NAME, get_db_path, get_settings
 from openground.embeddings import generate_embeddings
 from openground.extract.common import ParsedPage
 
@@ -87,7 +87,7 @@ def ingest_pages(pages: list[ParsedPage]) -> None:
         print("No pages to ingest.")
         return
 
-    db = lancedb.connect(str(get_settings().db_path))
+    db = lancedb.connect(str(get_db_path()))
     table = ensure_table(db)
 
     all_records = []

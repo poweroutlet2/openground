@@ -27,12 +27,11 @@ def test_defaults_without_config_file():
 
 
 def test_paths_are_derived_from_data_home(tmp_path):
-    settings = get_settings()
-    assert settings.db_path == tmp_path / "data" / "openground" / "lancedb"
-    assert settings.raw_data_dir == tmp_path / "data" / "openground" / "raw_data"
+    assert config.get_db_path() == tmp_path / "data" / "openground" / "lancedb"
+    assert config.get_raw_data_dir() == tmp_path / "data" / "openground" / "raw_data"
     assert (
         get_library_raw_data_dir("MyLib", "v1")
-        == settings.raw_data_dir / "mylib" / "v1"
+        == config.get_raw_data_dir() / "mylib" / "v1"
     )
 
 
@@ -94,3 +93,21 @@ def test_legacy_config_gets_actionable_message(legacy):
 
 def test_sources_path_sits_next_to_config():
     assert config.get_sources_path() == get_config_path().parent / "sources.json"
+
+
+def test_explicit_dimensions_must_match_a_known_model():
+    write_config(
+        {"embedding_model": "BAAI/bge-base-en-v1.5", "embedding_dimensions": 384}
+    )
+    with pytest.raises(UserError, match="768-dimensional"):
+        get_settings()
+
+    write_config(
+        {"embedding_model": "BAAI/bge-base-en-v1.5", "embedding_dimensions": 768}
+    )
+    assert get_settings().embedding_dimensions == 768
+
+
+def test_zero_overlap_is_allowed():
+    write_config({"chunk_overlap": 0})
+    assert get_settings().chunk_overlap == 0

@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-from openground.config import get_data_home, get_library_raw_data_dir
+from openground.config import (
+    get_db_path,
+    get_library_raw_data_dir,
+    get_raw_data_dir,
+)
 from openground.console import UserError
 from openground.extract.common import ParsedPage
 from openground.query import (
@@ -19,11 +23,12 @@ from openground.query import (
 )
 from openground.sources import (
     LibrarySource,
-    get_source,
     load_sources,
     remove_source,
     save_source,
+    source_location,
 )
+from openground.stats import get_stats_path
 from openground.update import UpdateSummary
 
 GIT_HOSTS = {"github.com", "www.github.com", "gitlab.com", "www.gitlab.com"}
@@ -43,8 +48,22 @@ class SyncResult:
     error: str | None = None
 
 
+def _expand(source: str) -> Path:
+    try:
+        return Path(source).expanduser()
+    except RuntimeError as e:
+        raise ServiceError(f"Could not resolve path '{source}': {e}") from None
+
+
+def _same_source(a: LibrarySource, b: LibrarySource) -> bool:
+    def key(spec: LibrarySource) -> tuple[str, str]:
+        return spec["type"], source_location(spec).rstrip("/").removesuffix(".git")
+
+    return key(a) == key(b)
+
+
 def detect_source_type(source: str) -> str:
-    if Path(source).expanduser().exists():
+    if _expand(source).exists():
         return "local_path"
 
     parsed = urlparse(source)
@@ -80,7 +99,7 @@ def parse_source(source: str) -> tuple[LibrarySource, str | None]:
         return spec, ref
     if source_type == "sitemap":
         return {"type": "sitemap", "sitemap_url": source}, None
-    path = Path(source).expanduser().resolve()
+    path = _expand(source).resolve()
     if not path.is_dir():
         raise ServiceError(f"Not a directory: {path}")
     return {"type": "local_path", "local_path": str(path)}, None
@@ -206,11 +225,24 @@ def add_library(
     filter_keywords: list[str] | None = None,
 ) -> SyncResult:
     """Extract and embed a library, then remember its source."""
+    remembered = load_sources().get(name)  # also validates the file before any work
+    stored = list_libraries_with_versions().get(name, [])
+
     if source:
         spec, ref = parse_source(source)
+        if remembered and stored and not _same_source(remembered, spec):
+            raise ServiceError(
+                f"'{name}' already uses {source_location(remembered)}. "
+                f"Remove it with `openground rm {name}` or pick another name."
+            )
         version = version or ref
-    elif remembered := get_source(name):
+    elif remembered:
         spec = remembered
+        if not version and stored and "latest" not in stored:
+            raise ServiceError(
+                f"'{name}' is already stored ({', '.join(stored)}). Use "
+                f"`openground update {name}` to refresh it, or pass -v to add another version."
+            )
     else:
         raise ServiceError(
             f"No remembered source for '{name}'. Run: openground add {name} SOURCE"
@@ -287,5 +319,7 @@ def list_libraries() -> list[tuple[str, list[str], bool]]:
 
 
 def reset_data() -> None:
-    """Delete all local data: embeddings, raw files and stats."""
-    shutil.rmtree(get_data_home(), ignore_errors=True)
+    """Delete embeddings, raw files and stats (never config or sources)."""
+    shutil.rmtree(get_db_path(), ignore_errors=True)
+    shutil.rmtree(get_raw_data_dir(), ignore_errors=True)
+    get_stats_path().unlink(missing_ok=True)

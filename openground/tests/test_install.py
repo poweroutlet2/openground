@@ -24,6 +24,12 @@ def test_prints_json_by_default():
     assert "install-mcp claude-code" in result.output
 
 
+def test_stdout_is_pure_json_so_it_can_be_redirected():
+    result = invoke()
+    assert "mcpServers" in json.loads(result.stdout)
+    assert "Paste this" in result.stderr
+
+
 def test_wsl_prints_wsl_wrapper():
     result = invoke("--wsl")
 

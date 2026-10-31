@@ -4,16 +4,19 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     import lancedb.table
 
-from openground.config import TABLE_NAME, get_settings
+from openground.config import TABLE_NAME, get_db_path, get_settings
 from openground.console import UserError
 from openground.embeddings import generate_embeddings
+
+
+FULL_CONTENT_TOOL = "get_full_content_tool"
 
 
 def _get_table() -> Optional["lancedb.table.Table"]:
     """Open the documents table fresh so other processes' writes are visible."""
     import lancedb
 
-    db = lancedb.connect(str(get_settings().db_path))
+    db = lancedb.connect(str(get_db_path()))
     return db.open_table(TABLE_NAME) if TABLE_NAME in db.table_names() else None
 
 
@@ -103,7 +106,9 @@ def search(
     if filters:
         builder = builder.where(" AND ".join(filters))
 
-    results = builder.limit(top_k or get_settings().top_k).to_list()
+    results = builder.limit(
+        top_k if top_k is not None else get_settings().top_k
+    ).to_list()
     if not results:
         return "Found 0 matches."
 
@@ -113,16 +118,11 @@ def search(
         snippet = (item.get("content") or "").strip()
         source = item.get("url") or "unknown"
         item_version = item.get("version") or version or "latest"
-        score = item.get("_distance") or item.get("_score")
-
-        score_str = ""
-        if isinstance(score, (int, float)):
-            score_str = f", score={score:.4f}"
-        elif score:
-            score_str = f", score={score}"
+        relevance = item.get("_relevance_score")
+        score_str = f", relevance={relevance:.4f}" if relevance is not None else ""
 
         tool_hint = json.dumps(
-            {"tool": "get_full_content", "url": source, "version": item_version}
+            {"tool": FULL_CONTENT_TOOL, "url": source, "version": item_version}
         )
         lines.append(
             f'{idx}. **{title}**: "{snippet}" (Source: {source}, Version: {item_version}{score_str})\n'

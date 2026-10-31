@@ -13,6 +13,7 @@ from fastmcp import FastMCP
 from openground.config import get_settings
 from openground.console import UserError
 from openground.query import (
+    FULL_CONTENT_TOOL,
     get_full_content,
     list_libraries_with_versions,
     search,
@@ -89,7 +90,7 @@ def list_libraries_tool() -> dict[str, list[str]]:
     return list_libraries_with_versions()
 
 
-@mcp.tool
+@mcp.tool(name=FULL_CONTENT_TOOL)
 def get_full_content_tool(url: str, version: str) -> str:
     """
     Retrieve the full content of a document by its URL and version.
@@ -98,7 +99,7 @@ def get_full_content_tool(url: str, version: str) -> str:
     that was returned in search results. The URL and version are provided
     in the search result's tool hint.
     """
-    increment_tool_call("get_full_content_tool")
+    increment_tool_call(FULL_CONTENT_TOOL)
     return get_full_content(url=url, version=version)
 
 

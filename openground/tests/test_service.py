@@ -347,9 +347,135 @@ def test_list_libraries_reports_remembered_sources(fake_source):
     assert list_libraries() == [("lib", ["latest"], True)]
 
 
-def test_reset_data_deletes_everything(fake_source):
+def test_reset_deletes_only_owned_paths(fake_source):
+    from openground.config import get_config_path, get_db_path, get_raw_data_dir
+    from openground.stats import get_stats_path, increment_tool_call
+
     add_library("lib", SITEMAP)
+    increment_tool_call("search_documents_tool")
+    # config shares the data dir on some platforms
+    stray = get_data_home() / "config.json"
+    stray.write_text("{}")
+    get_config_path().parent.mkdir(parents=True, exist_ok=True)
+    get_config_path().write_text("{}")
+
     reset_data()
 
-    assert not get_data_home().exists()
+    assert not get_db_path().exists()
+    assert not get_raw_data_dir().exists()
+    assert not get_stats_path().exists()
+    assert stray.exists() and get_config_path().exists()
+    assert get_source("lib") is not None
     assert list_libraries_with_versions() == {}
+
+
+class TestOneSourcePerLibrary:
+    def test_different_source_while_versions_stored_errors(self, fake_source):
+        add_library("lib", GIT, version="v1")
+
+        with pytest.raises(
+            ServiceError, match="already uses .*example.git.*openground rm lib"
+        ):
+            add_library("lib", "https://github.com/other/repo.git", version="v2")
+        assert list_libraries_with_versions() == {"lib": ["v1"]}
+
+    def test_same_source_in_any_spelling_is_fine(self, fake_source):
+        add_library("lib", GIT, version="v1")
+        add_library("lib", "https://github.com/example/example", version="v2")
+        add_library("lib", "https://github.com/example/example/tree/v3/docs")
+
+        assert list_libraries_with_versions() == {"lib": ["v1", "v2", "v3"]}
+
+    def test_source_can_change_after_everything_is_removed(self, fake_source):
+        add_library("lib", GIT)
+        remove_library("lib", "latest")
+
+        add_library("lib", SITEMAP)
+
+        assert get_source("lib")["type"] == "sitemap"
+
+    def test_source_can_change_when_nothing_is_stored(self, fake_source):
+        from openground.sources import save_source
+
+        save_source("lib", {"type": "sitemap", "sitemap_url": SITEMAP})
+        add_library("lib", GIT)
+        assert get_source("lib")["type"] == "git_repo"
+
+
+class TestAddWithoutSource:
+    def test_second_latest_version_is_not_created_silently(self, fake_source):
+        add_library("foo", GIT, version="v1")
+
+        with pytest.raises(
+            ServiceError, match=r"'foo' is already stored \(v1\).*update foo.*-v"
+        ):
+            add_library("foo")
+        assert list_libraries_with_versions() == {"foo": ["v1"]}
+
+    def test_explicit_version_adds_another(self, fake_source):
+        add_library("foo", GIT, version="v1")
+        add_library("foo", version="v2")
+        assert list_libraries_with_versions() == {"foo": ["v1", "v2"]}
+
+    def test_existing_latest_is_updated(self, fake_source):
+        add_library("foo", GIT)
+        assert add_library("foo").summary is not None
+
+
+class TestSourcesFileValidation:
+    @pytest.mark.parametrize(
+        "content, problem",
+        [
+            ("[]", "top level"),
+            ('{"lib": "x"}', "entry 'lib'"),
+            ('{"lib": {"type": "ftp"}}', "entry 'lib'"),
+            ('{"lib": {"type": "git_repo"}}', "missing 'repo_url'"),
+            ('{"lib": {"type": "sitemap", "sitemap_url": 3}}', "missing 'sitemap_url'"),
+            ('{"lib": {"type": "local_path"}}', "missing 'local_path'"),
+            (
+                '{"lib": {"type": "git_repo", "repo_url": "u", "docs_paths": "docs"}}',
+                "'docs_paths' must be a list",
+            ),
+        ],
+    )
+    def test_bad_entries_are_named(self, fake_source, content, problem):
+        from openground.config import get_sources_path
+
+        get_sources_path().parent.mkdir(parents=True, exist_ok=True)
+        get_sources_path().write_text(content)
+
+        with pytest.raises(UserError, match=problem) as exc:
+            add_library("other", SITEMAP)
+        assert str(get_sources_path()) in str(exc.value)
+
+    def test_bad_file_fails_before_any_extraction(self, fake_source):
+        from openground.config import get_sources_path
+
+        get_sources_path().parent.mkdir(parents=True, exist_ok=True)
+        get_sources_path().write_text('{"lib": {"type": "git_repo"}}')
+
+        with pytest.raises(UserError):
+            add_library("other", SITEMAP)
+        assert fake_source.calls == []
+        assert list_libraries_with_versions() == {}
+
+
+def test_unknown_home_directory_is_a_clean_error(fake_source):
+    with pytest.raises(ServiceError, match="Could not resolve path"):
+        add_library("lib", "~nosuchuser_xyz/docs")
+
+
+def test_missing_git_binary_is_a_clean_error(monkeypatch):
+    from openground.extract.git import get_default_branch, resolve_remote_ref
+
+    def no_git(*args, **kwargs):
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr("subprocess.run", no_git)
+
+    for call in (
+        lambda: resolve_remote_ref(GIT, "v1"),
+        lambda: get_default_branch(GIT),
+    ):
+        with pytest.raises(UserError, match="git is not installed.*git-scm.com"):
+            call()

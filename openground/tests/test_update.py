@@ -15,7 +15,7 @@ from openground.update import (
     compare_pages,
     perform_update,
 )
-from openground.config import TABLE_NAME, get_settings
+from openground.config import TABLE_NAME, get_db_path
 from openground.extract.common import ParsedPage
 
 
@@ -402,7 +402,7 @@ class TestDeleteUrls:
         import pyarrow as pa
 
         # Arrange: Create test table with URL containing special characters
-        db = lancedb.connect(str(get_settings().db_path))
+        db = lancedb.connect(str(get_db_path()))
         schema = pa.schema(
             [
                 pa.field("url", pa.string()),
