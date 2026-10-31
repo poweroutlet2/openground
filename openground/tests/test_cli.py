@@ -7,6 +7,7 @@ from openground.cli import app
 from openground.config import get_config_path, get_data_home
 from openground.query import list_libraries_with_versions
 from openground.sources import get_source
+from openground.tests.test_config import write_config
 
 runner = CliRunner()
 
@@ -233,6 +234,39 @@ class TestSearch:
         result = invoke("search", "anything")
         assert "Found 0 matches" in result.output
 
+    def test_unknown_library_lists_available(self, fake_source):
+        invoke("add", "lib", SITEMAP)
+
+        result = invoke("search", "guide", "-l", "typo")
+
+        assert result.exit_code == 1
+        assert "'typo' not found. Available libraries: lib" in result.output
+
+    def test_unknown_version_lists_available(self, fake_source):
+        invoke("add", "lib", SITEMAP)
+
+        result = invoke("search", "guide", "-l", "lib", "-v", "v9")
+
+        assert result.exit_code == 1
+        assert "Available versions: latest" in result.output
+
+    def test_version_filter_is_applied(self, fake_source):
+        invoke("add", "lib", GIT, "-v", "v1")
+        invoke("add", "lib", "-v", "v2")
+
+        result = invoke("search", "page", "-l", "lib", "-v", "v1")
+
+        assert "Version: v1" in result.output and "Version: v2" not in result.output
+
+    def test_embedding_mismatch_exits_1(self, fake_source):
+        invoke("add", "lib", SITEMAP)
+        write_config({"embedding_backend": "fastembed"})
+
+        result = invoke("search", "guide")
+
+        assert result.exit_code == 1
+        assert "openground reset" in result.output
+
 
 class TestConfig:
     def test_shows_defaults_and_locations(self):
@@ -250,7 +284,7 @@ class TestConfig:
         assert str(get_data_home()) in result.output
 
     def test_shows_user_overrides(self):
-        get_config_path().parent.mkdir(parents=True)
+        get_config_path().parent.mkdir(parents=True, exist_ok=True)
         get_config_path().write_text('{"top_k": 9}')
 
         result = invoke("config")
@@ -258,14 +292,24 @@ class TestConfig:
         assert '"top_k": 9' in result.output
         assert "not created" not in result.output
 
-    def test_invalid_config_exits_1(self):
-        get_config_path().parent.mkdir(parents=True)
+    def test_invalid_config_exits_1_but_still_shows_path(self):
+        get_config_path().parent.mkdir(parents=True, exist_ok=True)
         get_config_path().write_text("{nope")
 
         result = invoke("config")
 
         assert result.exit_code == 1
+        assert f"Config file: {get_config_path()}" in result.output
         assert "Invalid config file" in result.output
+
+    def test_legacy_config_explains_the_change(self):
+        get_config_path().parent.mkdir(parents=True, exist_ok=True)
+        get_config_path().write_text('{"embeddings": {"batch_size": 8}}')
+
+        result = invoke("config")
+
+        assert result.exit_code == 1
+        assert "flat keys" in result.output
 
 
 class TestStats:
@@ -284,6 +328,28 @@ class TestStats:
         assert "search_documents_tool: 0" in invoke("stats").output
 
 
+def test_corrupt_stats_file_exits_1_and_reset_fixes_it(tmp_path):
+    stats_file = get_data_home() / "stats.json"
+    stats_file.parent.mkdir(parents=True, exist_ok=True)
+    stats_file.write_text("{bad")
+
+    assert invoke("stats").exit_code == 1
+    assert invoke("stats", "--reset").exit_code == 0
+    assert invoke("stats").exit_code == 0
+
+
+def test_corrupt_sources_file_exits_1(fake_source):
+    from openground.config import get_sources_path
+
+    get_sources_path().parent.mkdir(parents=True)
+    get_sources_path().write_text("{bad")
+
+    result = invoke("add", "lib", SITEMAP)
+
+    assert result.exit_code == 1
+    assert "Invalid sources file" in result.output
+
+
 class TestReset:
     def test_reset_deletes_all_data(self, fake_source):
         invoke("add", "lib", SITEMAP)
@@ -293,6 +359,11 @@ class TestReset:
         assert result.exit_code == 0, result.output
         assert not get_data_home().exists()
 
+    def test_reset_keeps_remembered_sources(self, fake_source):
+        invoke("add", "lib", SITEMAP)
+        invoke("reset", "-y")
+        assert get_source("lib") is not None
+
     def test_reset_asks_for_confirmation(self, fake_source):
         invoke("add", "lib", SITEMAP)
 
@@ -300,6 +371,16 @@ class TestReset:
 
         assert result.exit_code == 1
         assert list_libraries_with_versions() == {"lib": ["latest"]}
+
+
+def test_serve_reports_invalid_config_without_traceback():
+    get_config_path().parent.mkdir(parents=True, exist_ok=True)
+    get_config_path().write_text("{nope")
+
+    result = invoke("serve")
+
+    assert result.exit_code == 1
+    assert "Invalid config file" in result.output
 
 
 def test_serve_runs_the_mcp_server(monkeypatch):

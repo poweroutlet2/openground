@@ -6,11 +6,16 @@ import shutil
 import subprocess
 import tempfile
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 
 from openground.console import UserError, hint, success, warning
 
-CLIENTS = ("claude-code", "cursor", "opencode")
+
+class Client(str, Enum):
+    claude_code = "claude-code"
+    cursor = "cursor"
+    opencode = "opencode"
 
 
 class InstallError(UserError):
@@ -118,20 +123,13 @@ def _install_opencode(command: list[str]) -> None:
     _merge_into_json_file(path, "mcp", entry)
 
 
-def install_to(client: str, wsl: bool = False) -> None:
-    command = server_command(wsl)
-    if client == "claude-code":
-        _install_claude_code(
-            ["wsl.exe", "openground-mcp"] if wsl else ["openground-mcp"]
-        )
-    elif client == "cursor":
-        _install_cursor(command)
-    elif client == "opencode":
-        _install_opencode(command)
-    else:
-        raise InstallError(
-            f"Unknown client '{client}'. Choose from: {', '.join(CLIENTS)}."
-        )
-    success(f"Installed openground to {client}.")
-    if client != "claude-code":
-        hint(f"Restart {client} to apply changes.")
+def install_to(client: Client, wsl: bool = False) -> None:
+    installer = {
+        Client.claude_code: _install_claude_code,
+        Client.cursor: _install_cursor,
+        Client.opencode: _install_opencode,
+    }[client]
+    installer(server_command(wsl))
+    success(f"Installed openground to {client.value}.")
+    if client is not Client.claude_code:
+        hint(f"Restart {client.value} to apply changes.")

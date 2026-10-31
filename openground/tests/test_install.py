@@ -40,6 +40,11 @@ def test_unknown_client_is_rejected():
     assert invoke("vscode").exit_code == 2
 
 
+@pytest.fixture(autouse=True)
+def installed_server(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda name: f"/opt/bin/{name}")
+
+
 class TestClaudeCode:
     def test_removes_existing_then_adds(self):
         with patch("subprocess.run", return_value=MagicMock(returncode=0)) as run:
@@ -58,7 +63,7 @@ class TestClaudeCode:
                 "user",
                 "openground",
                 "--",
-                "openground-mcp",
+                "/opt/bin/openground-mcp",
             ],
         ]
 

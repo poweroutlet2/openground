@@ -13,7 +13,9 @@ from openground.service import (
     update_libraries,
 )
 from openground.config import get_data_home, get_library_raw_data_dir
+from openground.console import UserError
 from openground.sources import get_source
+from openground.tests.test_config import write_config
 
 GIT = "https://github.com/example/example.git"
 SITEMAP = "https://docs.example.com/sitemap.xml"
@@ -145,10 +147,62 @@ class TestAddLibrary:
         with pytest.raises(ServiceError, match="No remembered source"):
             add_library("lib")
 
-    def test_version_only_for_git(self, fake_source):
-        with pytest.raises(ServiceError, match="--version"):
-            add_library("lib", SITEMAP, version="v2")
+    @pytest.mark.parametrize(
+        "source, option, flag",
+        [
+            (SITEMAP, {"version": "v2"}, "--version"),
+            ("LOCAL", {"version": "v2"}, "--version"),
+            (SITEMAP, {"docs_paths": ["docs"]}, "--docs-path"),
+            ("LOCAL", {"docs_paths": ["docs"]}, "--docs-path"),
+            (GIT, {"filter_keywords": ["x"]}, "--filter"),
+            ("LOCAL", {"filter_keywords": ["x"]}, "--filter"),
+        ],
+    )
+    def test_options_that_do_not_apply_are_rejected(
+        self, fake_source, tmp_path, source, option, flag
+    ):
+        source = str(tmp_path) if source == "LOCAL" else source
+        with pytest.raises(ServiceError, match=f"{flag} only applies to"):
+            add_library("lib", source, **option)
         assert get_source("lib") is None
+
+    def test_inapplicable_option_is_rejected_for_remembered_source(self, fake_source):
+        add_library("lib", SITEMAP)
+        with pytest.raises(ServiceError, match="--docs-path"):
+            add_library("lib", docs_paths=["docs"])
+
+    def test_explicit_latest_version_is_fine_for_any_source(self, fake_source):
+        assert add_library("lib", SITEMAP, version="latest").version == "latest"
+
+    def test_git_version_alias_is_canonicalized(self, fake_source):
+        fake_source.refs["1.0"] = "v1.0"
+
+        first = add_library("g", GIT, version="1.0")
+        again = add_library("g", GIT, version="1.0")
+
+        assert first.version == "v1.0"
+        assert again.summary is not None
+        assert list_libraries_with_versions() == {"g": ["v1.0"]}
+        assert get_library_raw_data_dir("g", "v1.0").exists()
+        assert not get_library_raw_data_dir("g", "1.0").exists()
+        assert fake_source.calls[0]["version"] == "v1.0"
+        assert resolve_version("g", "v1.0") == "v1.0"
+
+    def test_missing_git_ref_errors_before_extracting(self, fake_source):
+        fake_source.refs["nope"] = None
+        with pytest.raises(ServiceError, match="'nope' not found"):
+            add_library("g", GIT, version="nope")
+        assert fake_source.calls == []
+
+    def test_embedding_mismatch_errors_before_extracting(self, fake_source):
+        add_library("lib", SITEMAP)
+        write_config({"embedding_backend": "fastembed"})
+        fake_source.calls.clear()
+
+        with pytest.raises(UserError, match="openground reset"):
+            add_library("lib", SITEMAP)
+        assert fake_source.calls == []
+        assert update_libraries()[0].error
 
     def test_git_version_is_used(self, fake_source):
         add_library("lib", GIT, version="v1.0")
@@ -163,9 +217,16 @@ class TestAddLibrary:
             "repo_url"
         ] == "https://github.com/example/example.git"
 
-    def test_local_path_gets_dated_version(self, fake_source, tmp_path):
-        result = add_library("lib", str(tmp_path))
-        assert result.version.startswith("local-")
+    def test_local_path_uses_latest_version(self, fake_source, tmp_path):
+        assert add_library("lib", str(tmp_path)).version == "latest"
+
+    def test_local_path_must_be_a_directory(self, fake_source, tmp_path):
+        with pytest.raises(ServiceError, match="Not a directory"):
+            add_library("lib", str(tmp_path / "missing"))
+        file = tmp_path / "f.md"
+        file.write_text("x")
+        with pytest.raises(ServiceError, match="Not a directory"):
+            add_library("lib", str(file))
 
     def test_empty_extraction_errors_and_leaves_nothing(self, fake_source):
         fake_source.pages = {}

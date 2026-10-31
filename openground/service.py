@@ -5,7 +5,6 @@ import re
 import shutil
 import tempfile
 from dataclasses import dataclass
-from datetime import date
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -13,7 +12,7 @@ from openground.config import get_data_home, get_library_raw_data_dir
 from openground.console import UserError
 from openground.extract.common import ParsedPage
 from openground.query import (
-    clear_query_caches,
+    check_embedding_config,
     delete_library,
     library_version_exists,
     list_libraries_with_versions,
@@ -81,14 +80,48 @@ def parse_source(source: str) -> tuple[LibrarySource, str | None]:
         return spec, ref
     if source_type == "sitemap":
         return {"type": "sitemap", "sitemap_url": source}, None
-    local_path = str(Path(source).expanduser().resolve())
-    return {"type": "local_path", "local_path": local_path}, None
+    path = Path(source).expanduser().resolve()
+    if not path.is_dir():
+        raise ServiceError(f"Not a directory: {path}")
+    return {"type": "local_path", "local_path": str(path)}, None
 
 
-def _default_version(spec: LibrarySource) -> str:
-    if spec["type"] == "local_path":
-        return date.today().strftime("local-%Y-%m-%d")
-    return "latest"
+def _apply_options(
+    spec: LibrarySource,
+    version: str | None,
+    docs_paths: list[str] | None,
+    filter_keywords: list[str] | None,
+) -> str:
+    """Merge CLI options into the source spec, rejecting ones that don't apply."""
+    kind = spec["type"]
+    for given, flag, valid_for in (
+        (version and version != "latest", "--version", "git_repo"),
+        (docs_paths, "--docs-path", "git_repo"),
+        (filter_keywords, "--filter", "sitemap"),
+    ):
+        if given and kind != valid_for:
+            raise ServiceError(
+                f"{flag} only applies to {valid_for.replace('_repo', '')} sources, "
+                f"not {kind.replace('_repo', '').replace('_', ' ')} sources."
+            )
+    if docs_paths:
+        spec["docs_paths"] = docs_paths
+    if filter_keywords:
+        spec["filter_keywords"] = filter_keywords
+    return version or "latest"
+
+
+def _canonical_ref(spec: LibrarySource, version: str) -> str:
+    """Resolve a git version to the real tag/branch name (e.g. 1.0 -> v1.0)."""
+    if spec["type"] != "git_repo" or version == "latest":
+        return version
+    from openground.extract.git import resolve_remote_ref
+
+    if (ref := resolve_remote_ref(spec["repo_url"], version)) is None:
+        raise ServiceError(
+            f"Tag or branch '{version}' not found in {spec['repo_url']}."
+        )
+    return ref
 
 
 async def _extract(spec: LibrarySource, library: str, version: str, out_dir: Path):
@@ -143,6 +176,7 @@ def _sync(library: str, version: str, spec: LibrarySource) -> SyncResult:
     from openground.ingest import ingest_pages
     from openground.update import perform_update
 
+    check_embedding_config()
     raw_dir = get_library_raw_data_dir(library, version)
     stored = library_version_exists(library, version) and any(raw_dir.glob("*.json"))
 
@@ -182,17 +216,10 @@ def add_library(
             f"No remembered source for '{name}'. Run: openground add {name} SOURCE"
         )
 
-    if docs_paths and spec["type"] == "git_repo":
-        spec["docs_paths"] = docs_paths
-    if filter_keywords and spec["type"] == "sitemap":
-        spec["filter_keywords"] = filter_keywords
-    if version and version != "latest" and spec["type"] != "git_repo":
-        raise ServiceError("--version only applies to git repo sources.")
-
-    try:
-        result = _sync(name, version or _default_version(spec), spec)
-    finally:
-        clear_query_caches()
+    version = _canonical_ref(
+        spec, _apply_options(spec, version, docs_paths, filter_keywords)
+    )
+    result = _sync(name, version, spec)
     save_source(name, spec)
     return result
 
@@ -220,7 +247,6 @@ def update_libraries(name: str | None = None) -> list[SyncResult]:
                 results.append(_sync(library, version, sources[library]))
             except Exception as e:
                 results.append(SyncResult(library, version, error=str(e)))
-    clear_query_caches()
     return results
 
 
@@ -246,7 +272,6 @@ def remove_library(name: str, version: str) -> int:
     """Delete a stored version (rows and raw files); forget the source with the last one."""
     deleted = delete_library(name, version)
     shutil.rmtree(get_library_raw_data_dir(name, version), ignore_errors=True)
-    clear_query_caches()
     if name not in list_libraries_with_versions():
         remove_source(name)
     return deleted
@@ -264,4 +289,3 @@ def list_libraries() -> list[tuple[str, list[str], bool]]:
 def reset_data() -> None:
     """Delete all local data: embeddings, raw files and stats."""
     shutil.rmtree(get_data_home(), ignore_errors=True)
-    clear_query_caches()

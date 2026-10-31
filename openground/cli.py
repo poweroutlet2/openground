@@ -1,22 +1,16 @@
 import functools
-from enum import Enum
 from typing import Callable, Optional
 
 import typer
 
 from openground.console import UserError, error, success, warning
+from openground.install import Client
 
 app = typer.Typer(
     help="Index documentation into a local vector database and search it from AI agents.",
     no_args_is_help=True,
     add_completion=False,
 )
-
-
-class Client(str, Enum):
-    claude_code = "claude-code"
-    cursor = "cursor"
-    opencode = "opencode"
 
 
 def _handle_errors(fn: Callable) -> Callable:
@@ -89,7 +83,7 @@ def add(
         help="Only index sitemap URLs containing this (repeatable).",
     ),
 ):
-    """Extract and embed a library. Re-running on an existing library updates it."""
+    """Add a library. If this name and version are already stored, update it instead."""
     from openground.service import add_library
 
     _report(add_library(name, source, version, docs_paths, filter_keywords))
@@ -187,10 +181,13 @@ def search(
 
 
 @app.command()
+@_handle_errors
 def serve():
     """Run the MCP server on stdio (same as `openground-mcp`)."""
+    from openground.config import get_settings
     from openground.server import run_server
 
+    get_settings()
     run_server()
 
 
@@ -212,7 +209,7 @@ def install_mcp(
             "`openground install-mcp claude-code|cursor|opencode`."
         )
         return
-    install_to(client.value, wsl)
+    install_to(client, wsl)
 
 
 @app.command()
@@ -227,12 +224,12 @@ def config():
     )
 
     path = get_config_path()
-    settings = get_settings()
     typer.echo(
         f"Config file: {path}"
         + ("" if path.exists() else " (not created; using defaults)")
     )
     typer.echo("Edit it to change settings; delete it to reset.\n")
+    settings = get_settings()
     typer.echo(settings.model_dump_json(indent=2))
     typer.echo(f"\nDatabase:    {settings.db_path}")
     typer.echo(f"Raw files:   {settings.raw_data_dir}")
@@ -246,25 +243,26 @@ def stats(
     reset: bool = typer.Option(False, "--reset", help="Zero the tool call counters."),
 ):
     """Show MCP tool call counts."""
-    from openground.stats import load_stats, reset_stats
+    from openground.query import count_chunks, list_libraries_with_versions
+    from openground.stats import load_tool_calls, reset_stats
 
     if reset:
         reset_stats()
         success("Tool call counts reset.")
         return
 
-    data = load_stats(include_db=True)
-    typer.echo(f"Libraries: {data['libraries_count']}")
-    typer.echo(f"Chunks:    {data['total_chunks']}")
+    calls = load_tool_calls()
+    typer.echo(f"Libraries: {len(list_libraries_with_versions())}")
+    typer.echo(f"Chunks:    {count_chunks()}")
     typer.echo("Tool calls:")
-    for tool, count in sorted(data["tool_calls"].items()):
+    for tool, count in sorted(calls.items()):
         typer.echo(f"  {tool}: {count}")
 
 
 @app.command()
 @_handle_errors
 def reset(yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation.")):
-    """Delete ALL local data (embeddings, raw files, stats)."""
+    """Delete ALL local data (embeddings, raw files, stats). Remembered sources are kept."""
     from openground.config import get_data_home
     from openground.service import reset_data
 

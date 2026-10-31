@@ -10,6 +10,8 @@ os.environ["FAST_EMBED_IGNORE_TRANSFORMERS_LOGS"] = "1"
 
 from fastmcp import FastMCP
 
+from openground.config import get_settings
+from openground.console import UserError
 from openground.query import (
     get_full_content,
     list_libraries_with_versions,
@@ -30,12 +32,10 @@ mcp = FastMCP(
 
 
 def _pre_load_resources():
-    """Warm up caches and pre-load embedding models in the background."""
+    """Load the embedding model in the background so the first search is fast."""
     start_time = time.time()
     sys.stderr.write("[info] Background initialization started...\n")
     try:
-        list_libraries_with_versions()
-
         from openground.embeddings import generate_embeddings
 
         generate_embeddings(["warmup"], show_progress=False)
@@ -65,27 +65,15 @@ def search_documents_tool(
     then filter by library_name and version.
     """
     increment_tool_call("search_documents_tool")
-    available_libraries = list_libraries_with_versions()
-
-    if library_name not in available_libraries:
-        available_lib_names = ", ".join(sorted(available_libraries.keys()))
-        if available_lib_names:
-            return f"Library '{library_name}' not found. Available libraries: {available_lib_names}"
-        else:
-            return f"Library '{library_name}' not found. No libraries are currently available in the database."
-
-    available_versions = available_libraries[library_name]
-    if version not in available_versions:
-        versions_str = ", ".join(available_versions)
-        return f"Version '{version}' not found for library '{library_name}'. Available versions: {versions_str}"
-
-    # Library and version exist, proceed with search
-    return search(
-        query=query,
-        version=version,
-        library_name=library_name,
-        show_progress=False,
-    )
+    try:
+        return search(
+            query=query,
+            version=version,
+            library_name=library_name,
+            show_progress=False,
+        )
+    except UserError as e:
+        return str(e)
 
 
 @mcp.tool
@@ -96,10 +84,6 @@ def list_libraries_tool() -> dict[str, list[str]]:
     Returns a dictionary mapping library names to lists of available versions.
     Use this tool to see what documentation is available before performing a search.
     If the desired library is not in the list, you may prompt the user to add it.
-
-    Args:
-        search_term: Optional search term to filter library names (case-insensitive).
-                     If provided, only libraries whose names contain the search term will be returned.
     """
     increment_tool_call("list_libraries_tool")
     return list_libraries_with_versions()
@@ -120,6 +104,11 @@ def get_full_content_tool(url: str, version: str) -> str:
 
 def run_server():
     """Entry point for the MCP server."""
+    try:
+        get_settings()
+    except UserError as e:
+        sys.exit(f"[error] {e}")
+
     threading.Thread(target=_pre_load_resources, daemon=True).start()
 
     mcp.run(transport="stdio")
