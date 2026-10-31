@@ -92,7 +92,9 @@ def resolve_remote_ref(repo_url: str, version: str) -> str | None:
     )
 
     if result.returncode != 0:
-        return None
+        raise UserError(
+            f"Could not list refs for {repo_url}: {result.stderr.strip() or 'git ls-remote failed'}"
+        )
 
     lines = result.stdout.splitlines()
     remote_refs = set()

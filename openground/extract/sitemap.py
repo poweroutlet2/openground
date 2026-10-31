@@ -10,6 +10,7 @@ from tqdm.asyncio import tqdm as async_tqdm
 
 import trafilatura
 
+from openground.console import UserError
 from openground.extract.common import ParsedPage, save_results
 
 CONCURRENCY_LIMIT = 50
@@ -22,10 +23,15 @@ async def fetch_sitemap_urls(
 ) -> set[str]:
     print(f"Getting sitemap: {url}")
 
-    async with session.get(url) as response:
-        content = await response.text()
-
-    root = ET.fromstring(content)
+    try:
+        async with session.get(url) as response:
+            response.raise_for_status()
+            content = await response.text()
+        root = ET.fromstring(content)
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        raise UserError(f"Could not fetch sitemap {url}: {e}") from e
+    except ET.ParseError as e:
+        raise UserError(f"{url} is not a valid sitemap XML: {e}") from e
     namespace = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
     urls = {
