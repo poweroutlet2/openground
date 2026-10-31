@@ -64,22 +64,22 @@ openground add my-docs ./docs
 
 Git and local sources index `.md`, `.rst`, `.txt`, `.mdx`, `.ipynb`, `.html` and `.htm` files. GitHub/GitLab web URLs like `https://github.com/o/r/tree/v1.0/docs` also work; the tag and folder are picked up from the URL.
 
-openground remembers `SOURCE` in `~/.openground/sources.json`, so later you can run `openground add NAME` (re-extracts and updates only the pages that changed) or `openground update` (refresh everything).
+openground remembers `SOURCE` in `sources.json` next to the config file. Then `openground update` refreshes every stored version of every library from its remembered source (`update NAME` for one library), re-embedding only pages that changed. `openground add NAME` re-adds with the remembered source; if that exact name and version is already stored it is updated incrementally instead.
 
 ### Commands
 
 | Command | |
 |---|---|
-| `add NAME [SOURCE]` | Extract and embed a library; re-running updates it. Options: `-d/--docs-path` (git, repeatable), `-v/--version` (git tag or branch), `-f/--filter` (sitemap, repeatable) |
+| `add NAME [SOURCE]` | Add a library (an existing name+version is updated in place). Options (each only valid for its source type): `-d/--docs-path` (git, repeatable), `-v/--version` (git tag or branch), `-f/--filter` (sitemap, repeatable) |
 | `update [NAME]` | Refresh libraries from their remembered sources (all if no name) |
 | `ls` | List libraries, versions, and whether a source is remembered |
-| `rm NAME` | Delete a library version and forget its source. `-v` is only needed when several versions are stored. `-y` skips the prompt |
+| `rm NAME` | Delete a library version; the remembered source is forgotten once the last version is gone. `-v` is only needed when several versions are stored. `-y` skips the prompt |
 | `search QUERY` | Hybrid search from the terminal. Options: `-l`, `-v`, `-k` |
 | `serve` | Run the MCP server on stdio (same as `openground-mcp`) |
 | `install-mcp [CLIENT]` | Configure `claude-code`, `cursor` or `opencode`; no client prints the JSON. `--wsl` launches the server through `wsl.exe` |
 | `config` | Show the config file path, effective settings and data locations |
 | `stats` | MCP tool call counts. `--reset` zeroes them |
-| `reset` | Delete all local data (embeddings, raw files, stats). `-y` skips the prompt |
+| `reset` | Delete all local data (embeddings, raw files, stats); remembered sources are kept. `-y` skips the prompt |
 
 ### Use with AI agents
 
@@ -106,9 +106,16 @@ Defaults work out of the box. To change them, create `~/.config/openground/confi
 }
 ```
 
-`embedding_backend` is `sentence-transformers` or `fastembed`. `embedding_dimensions` is filled in for common bge and MiniLM models; set it yourself for any other model. Unknown keys are rejected. Delete the file to reset.
+`embedding_backend` is `sentence-transformers` or `fastembed`. `embedding_dimensions` is filled in for common bge and MiniLM models; set it yourself for any other model. Unknown keys and non-positive numbers are rejected, and `chunk_overlap` must be smaller than `chunk_size`. Delete the file to reset.
 
-Changing the backend or model after libraries are stored requires `openground reset` and re-adding them. Data lives in `~/.local/share/openground` (`$XDG_DATA_HOME/openground`); run `openground config` to see all paths.
+Embeddings are tied to the backend and model they were made with. If you change them after libraries are stored, openground refuses to add or search until you restore the old values or run `openground reset` and re-add your libraries. Data lives in `~/.local/share/openground` (`$XDG_DATA_HOME/openground`); run `openground config` to see all paths.
+
+## Upgrading from 0.14
+
+- **Config is flat.** The old nested `config.json` (`embeddings`, `query`, `extraction`, `sources`, `db_path`, `table_name`, ...) is rejected with an error. Delete it (or rewrite it in the flat format above); `db_path`, `raw_data_dir` and `table_name` are no longer settings.
+- **One sources file.** Sources live in `sources.json` next to `config.json` (`~/.config/openground/sources.json`). `~/.openground/sources.json`, project-level `.openground/sources.json`, `--sources-file` and the bundled catalog are gone; copy any entries you want to keep.
+- **Default backend is `sentence-transformers`** (it was `fastembed`). If your existing libraries were embedded with fastembed, either set `"embedding_backend": "fastembed"` in `config.json` or run `openground reset` and re-add them.
+- **Commands changed.** `extract-*`, `embed`, `query`, `list-libraries`, `remove`, `nuke`, `config set|get|show|reset` and `stats show|clear` are replaced by the commands above. Local directories are now stored under the version `latest`.
 
 ## Claude Code Agent
 
