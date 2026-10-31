@@ -8,11 +8,8 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["TRANSFORMERS_VERBOSITY"] = "error"
 os.environ["FAST_EMBED_IGNORE_TRANSFORMERS_LOGS"] = "1"
 
-from pathlib import Path
-
 from fastmcp import FastMCP
 
-from openground.config import get_effective_config
 from openground.query import (
     get_full_content,
     list_libraries_with_versions,
@@ -31,30 +28,14 @@ mcp = FastMCP(
     4. If the library exists, use `search_documents_tool` to find the answer.""",
 )
 
-_config = None
-
-
-def _get_config():
-    """Get effective config, loading it once and caching."""
-    global _config
-    if _config is None:
-        _config = get_effective_config()
-    return _config
-
 
 def _pre_load_resources():
     """Warm up caches and pre-load embedding models in the background."""
     start_time = time.time()
     sys.stderr.write("[info] Background initialization started...\n")
     try:
-        config = _get_config()
-        db_path = Path(config["db_path"]).expanduser()
-        table_name = config["table_name"]
+        list_libraries_with_versions()
 
-        # Warm up metadata cache
-        list_libraries_with_versions(db_path=db_path, table_name=table_name)
-
-        # Warm up embedding model
         from openground.embeddings import generate_embeddings
 
         generate_embeddings(["warmup"], show_progress=False)
@@ -66,7 +47,6 @@ def _pre_load_resources():
     except Exception as e:
         # Background tasks should never crash the server
         sys.stderr.write(f"[error] Background initialization failed: {e}\n")
-        pass
 
 
 @mcp.tool
@@ -85,15 +65,7 @@ def search_documents_tool(
     then filter by library_name and version.
     """
     increment_tool_call("search_documents_tool")
-    config = _get_config()
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-
-    # Validate that library and version exist (uses cache if warmed up)
-    available_libraries = list_libraries_with_versions(
-        db_path=db_path,
-        table_name=table_name,
-    )
+    available_libraries = list_libraries_with_versions()
 
     if library_name not in available_libraries:
         available_lib_names = ", ".join(sorted(available_libraries.keys()))
@@ -111,10 +83,7 @@ def search_documents_tool(
     return search(
         query=query,
         version=version,
-        db_path=db_path,
-        table_name=table_name,
         library_name=library_name,
-        top_k=config["query"]["top_k"],
         show_progress=False,
     )
 
@@ -133,12 +102,7 @@ def list_libraries_tool() -> dict[str, list[str]]:
                      If provided, only libraries whose names contain the search term will be returned.
     """
     increment_tool_call("list_libraries_tool")
-    config = _get_config()
-    return list_libraries_with_versions(
-        db_path=Path(config["db_path"]).expanduser(),
-        table_name=config["table_name"],
-        search_term=None,
-    )
+    return list_libraries_with_versions()
 
 
 @mcp.tool
@@ -151,13 +115,7 @@ def get_full_content_tool(url: str, version: str) -> str:
     in the search result's tool hint.
     """
     increment_tool_call("get_full_content_tool")
-    config = _get_config()
-    return get_full_content(
-        url=url,
-        version=version,
-        db_path=Path(config["db_path"]).expanduser(),
-        table_name=config["table_name"],
-    )
+    return get_full_content(url=url, version=version)
 
 
 def run_server():
