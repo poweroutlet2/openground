@@ -6,13 +6,17 @@ if TYPE_CHECKING:
     import lancedb
     import lancedb.table
 
-from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
+from openground.config import TABLE_NAME, get_settings
 from openground.embeddings import generate_embeddings
 
 # Caches for database connection and table
 _db_cache: dict[str, Any] = {}
 _table_cache: dict[tuple[str, str], Any] = {}
 _metadata_cache: dict[tuple[str, str], dict[str, Any]] = {}
+
+
+def _resolve_db_path(db_path: Path | None) -> Path:
+    return get_settings().db_path if db_path is None else db_path
 
 
 def _get_db(db_path: Path) -> "lancedb.DBConnection":
@@ -67,11 +71,11 @@ def _escape_sql_string(value: str) -> str:
 
 def search(
     query: str,
-    version: str,
-    db_path: Path = DEFAULT_DB_PATH,
-    table_name: str = DEFAULT_TABLE_NAME,
+    version: Optional[str] = None,
+    db_path: Path | None = None,
+    table_name: str = TABLE_NAME,
     library_name: Optional[str] = None,
-    top_k: int = 10,
+    top_k: Optional[int] = None,
     show_progress: bool = True,
 ) -> str:
     """
@@ -80,13 +84,14 @@ def search(
 
     Args:
         query: User query text.
-        version: Version to filter results by.
-        db_path: Path to LanceDB storage.
+        version: Optional version to filter results by.
+        db_path: Path to LanceDB storage (defaults to the configured db).
         table_name: Table name to search.
         library_name: Optional filter on library name column.
-        top_k: Number of results to return.
+        top_k: Number of results to return (defaults to the configured top_k).
         show_progress: Whether to show progress during embedding.
     """
+    db_path = _resolve_db_path(db_path)
     table = _get_table(db_path, table_name)
     if table is None:
         return "Found 0 matches."
@@ -95,14 +100,15 @@ def search(
 
     search_builder = table.search(query_type="hybrid").text(query).vector(query_vec)
 
-    safe_version = _escape_sql_string(version)
-    search_builder = search_builder.where(f"version = '{safe_version}'")
+    if version:
+        safe_version = _escape_sql_string(version)
+        search_builder = search_builder.where(f"version = '{safe_version}'")
 
     if library_name:
         safe_name = _escape_sql_string(library_name)
         search_builder = search_builder.where(f"library_name = '{safe_name}'")
 
-    results = search_builder.limit(top_k).to_list()
+    results = search_builder.limit(top_k or get_settings().top_k).to_list()
 
     if not results:
         return "Found 0 matches."
@@ -113,7 +119,7 @@ def search(
         # Return the full chunk so downstream consumers (LLM) see the whole text.
         snippet = (item.get("content") or "").strip()
         source = item.get("url") or "unknown"
-        item_version = item.get("version") or version
+        item_version = item.get("version") or version or "latest"
         score = item.get("_distance") or item.get("_score")
 
         score_str = ""
@@ -136,7 +142,7 @@ def search(
 
 
 def list_libraries(
-    db_path: Path = DEFAULT_DB_PATH, table_name: str = DEFAULT_TABLE_NAME
+    db_path: Path | None = None, table_name: str = TABLE_NAME
 ) -> list[str]:
     """
     Return sorted unique non-null library names from the table.
@@ -148,15 +154,15 @@ def list_libraries(
 
 
 def list_libraries_with_versions(
-    db_path: Path = DEFAULT_DB_PATH,
-    table_name: str = DEFAULT_TABLE_NAME,
+    db_path: Path | None = None,
+    table_name: str = TABLE_NAME,
     search_term: Optional[str] = None,
 ) -> dict[str, list[str]]:
     """
     Return a dictionary mapping library names to their sorted version lists.
 
     Args:
-        db_path: Path to LanceDB storage.
+        db_path: Path to LanceDB storage (defaults to the configured db).
         table_name: Table name to search.
         search_term: Optional search term to filter library names (case-insensitive).
 
@@ -164,6 +170,7 @@ def list_libraries_with_versions(
         Dictionary mapping library names to sorted lists of versions.
         Returns empty dict if no libraries found or table doesn't exist.
     """
+    db_path = _resolve_db_path(db_path)
     cache_key = (str(db_path), table_name)
     if cache_key in _metadata_cache:
         result = _metadata_cache[cache_key]
@@ -211,8 +218,8 @@ def list_libraries_with_versions(
 def get_full_content(
     url: str,
     version: str,
-    db_path: Path = DEFAULT_DB_PATH,
-    table_name: str = DEFAULT_TABLE_NAME,
+    db_path: Path | None = None,
+    table_name: str = TABLE_NAME,
 ) -> str:
     """
     Retrieve the full content of a document by its URL and version.
@@ -220,12 +227,13 @@ def get_full_content(
     Args:
         url: URL of the document to retrieve.
         version: Version of the document to retrieve.
-        db_path: Path to LanceDB storage.
+        db_path: Path to LanceDB storage (defaults to the configured db).
         table_name: Table name to search.
 
     Returns:
         Formatted markdown string with title, source URL, and full content.
     """
+    db_path = _resolve_db_path(db_path)
     table = _get_table(db_path, table_name)
     if table is None:
         return f"No content found for URL: {url}"
@@ -254,10 +262,11 @@ def get_full_content(
 def get_library_stats(
     library_name: str,
     version: str,
-    db_path: Path = DEFAULT_DB_PATH,
-    table_name: str = DEFAULT_TABLE_NAME,
+    db_path: Path | None = None,
+    table_name: str = TABLE_NAME,
 ) -> dict | None:
     """Get statistics for a library version (chunk count, unique URLs, etc.)."""
+    db_path = _resolve_db_path(db_path)
     table = _get_table(db_path, table_name)
     if table is None:
         return None
@@ -301,10 +310,11 @@ def get_library_stats(
 def delete_library(
     library_name: str,
     version: str,
-    db_path: Path = DEFAULT_DB_PATH,
-    table_name: str = DEFAULT_TABLE_NAME,
+    db_path: Path | None = None,
+    table_name: str = TABLE_NAME,
 ) -> int:
     """Delete all documents for a library version. Returns count of deleted rows."""
+    db_path = _resolve_db_path(db_path)
     table = _get_table(db_path, table_name)
     if table is None:
         return 0
@@ -326,8 +336,8 @@ def delete_urls(
     urls: list[str],
     library_name: str,
     version: str,
-    db_path: Path = DEFAULT_DB_PATH,
-    table_name: str = DEFAULT_TABLE_NAME,
+    db_path: Path | None = None,
+    table_name: str = TABLE_NAME,
 ) -> int:
     """
     Delete all chunks for given URLs from LanceDB.
@@ -336,12 +346,13 @@ def delete_urls(
         urls: List of URLs to delete
         library_name: Library name filter
         version: Version filter
-        db_path: Path to LanceDB storage
+        db_path: Path to LanceDB storage (defaults to the configured db)
         table_name: Table name
 
     Returns:
         Number of deleted rows
     """
+    db_path = _resolve_db_path(db_path)
     table = _get_table(db_path, table_name)
     if table is None:
         return 0
@@ -366,8 +377,8 @@ def delete_urls(
 def library_version_exists(
     library_name: str,
     version: str,
-    db_path: Path = DEFAULT_DB_PATH,
-    table_name: str = DEFAULT_TABLE_NAME,
+    db_path: Path | None = None,
+    table_name: str = TABLE_NAME,
 ) -> bool:
     """
     Check if library version exists in LanceDB.
@@ -375,11 +386,22 @@ def library_version_exists(
     Args:
         library_name: Library name to check
         version: Version to check
-        db_path: Path to LanceDB storage
+        db_path: Path to LanceDB storage (defaults to the configured db)
         table_name: Table name
 
     Returns:
         True if library version exists, False otherwise
     """
-    stats = get_library_stats(library_name, version, db_path, table_name)
-    return stats is not None
+    db_path = _resolve_db_path(db_path)
+    table = _get_table(db_path, table_name)
+    if table is None:
+        return False
+
+    safe_name = _escape_sql_string(library_name)
+    safe_version = _escape_sql_string(version)
+    return (
+        table.count_rows(
+            filter=f"library_name = '{safe_name}' AND version = '{safe_version}'"
+        )
+        > 0
+    )

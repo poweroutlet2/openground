@@ -81,14 +81,10 @@ packages = ["openground"]
 [tool.hatch.build.targets.sdist]
 include = [
     "openground/**/*.py",
-    "openground/**/*.json",
     "pyproject.toml",
     "README.md",
     "LICENSE",
 ]
-
-[tool.hatch.build]
-include = ["openground/sources.json"]
 
 [[tool.uv.index]]
 name = "testpypi"

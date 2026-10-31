@@ -225,7 +225,7 @@ class TestPerformUpdate:
                 table_name="test_table",
             )
 
-    @patch("openground.ingest.ingest_pages_to_lancedb")
+    @patch("openground.ingest.ingest_pages")
     @patch("openground.update.delete_urls")
     def test_new_library_update(
         self, mock_delete, mock_ingest, temp_raw_data_dir, temp_db_path, sample_pages
@@ -258,7 +258,7 @@ class TestPerformUpdate:
         # Files should be created
         assert len(list(lib_dir.glob("*.json"))) == 3
 
-    @patch("openground.ingest.ingest_pages_to_lancedb")
+    @patch("openground.ingest.ingest_pages")
     @patch("openground.update.delete_urls")
     def test_incremental_update_no_changes(
         self, mock_delete, mock_ingest, temp_raw_data_dir, temp_db_path, sample_pages
@@ -296,7 +296,7 @@ class TestPerformUpdate:
         mock_delete.assert_not_called()
         mock_ingest.assert_not_called()
 
-    @patch("openground.ingest.ingest_pages_to_lancedb")
+    @patch("openground.ingest.ingest_pages")
     @patch("openground.update.delete_urls")
     def test_incremental_update_with_changes(
         self, mock_delete, mock_ingest, temp_raw_data_dir, temp_db_path

@@ -8,16 +8,11 @@ from aiohttp import ClientSession, ClientTimeout
 from xml.etree import ElementTree as ET
 from tqdm.asyncio import tqdm as async_tqdm
 
-from openground.config import (
-    CONCURRENCY_LIMIT,
-    DEFAULT_LIBRARY_NAME,
-    SITEMAP_URL,
-    get_library_raw_data_dir,
-)
-
 import trafilatura
 
 from openground.extract.common import ParsedPage, save_results
+
+CONCURRENCY_LIMIT = 50
 
 
 async def fetch_sitemap_urls(
@@ -168,33 +163,16 @@ def parse_html(
 
 
 async def extract_pages(
-    sitemap_url: str = SITEMAP_URL,
-    concurrency_limit: int = CONCURRENCY_LIMIT,
-    library_name: str = DEFAULT_LIBRARY_NAME,
-    output_dir: Path | None = None,
-    filter_keywords: list[str] = [],
+    sitemap_url: str,
+    library_name: str,
+    output_dir: Path,
+    filter_keywords: list[str] | None = None,
     version: str = "latest",
-    trim_query_params: bool = False,
 ) -> None:
-    if output_dir is None:
-        output_dir = get_library_raw_data_dir(library_name, version=version)
     connector = aiohttp.TCPConnector()
 
     async with aiohttp.ClientSession(connector=connector) as session:
-        urls = await fetch_sitemap_urls(session, sitemap_url, filter_keywords)
-
-        if trim_query_params:
-            original_count = len(urls)
-            # Trim query parameters and deduplicate using a set comprehension
-            urls = {
-                f"{p.scheme}://{p.netloc}{p.path}"
-                for url in urls
-                if (p := urlparse(url))
-            }
-            if len(urls) < original_count:
-                print(
-                    f"Trimmed query parameters: {original_count} -> {len(urls)} unique URLs"
-                )
+        urls = await fetch_sitemap_urls(session, sitemap_url, filter_keywords or [])
 
         # Filter by robots.txt
         parsed = urlparse(sitemap_url)
@@ -204,7 +182,7 @@ async def extract_pages(
         urls = filter_urls_by_robots(urls, robot_parser)
         print(f"Filtered to {len(urls)} URLs after robots.txt check")
 
-        semaphore = asyncio.Semaphore(concurrency_limit)
+        semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
         tasks = [
             process_url(semaphore, session, url, library_name, version) for url in urls

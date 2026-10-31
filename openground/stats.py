@@ -3,7 +3,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable, TypeVar, TypedDict
 
-from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME, get_data_home
+from openground.config import TABLE_NAME, get_data_home, get_settings
 from openground.query import _get_table, list_libraries_with_versions
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -41,17 +41,10 @@ def get_default_stats() -> StatsJson:
     )
 
 
-def load_stats(db_path: Path | None = None, table_name: str | None = None) -> StatsJson:
-    """Load statistics from the stats file.
+def load_stats(include_db: bool = False) -> StatsJson:
+    """Load tool call counts; with include_db, also count libraries and chunks in the db.
 
-    Args:
-        db_path: Optional path to LanceDB storage for computing libraries_count and total_chunks.
-        table_name: Optional table name for computing libraries_count and total_chunks.
-
-    Returns:
-        StatsJson with loaded stats. Computed fields are calculated if db_path/table_name provided.
-
-    Raises ValueError if file contains invalid JSON.
+    Raises ValueError if the stats file is unreadable.
     """
     stats_path = get_stats_path()
 
@@ -86,11 +79,9 @@ def load_stats(db_path: Path | None = None, table_name: str | None = None) -> St
         except Exception as e:
             raise ValueError(f"Error reading stats file {stats_path}: {e}") from e
 
-    if db_path is not None and table_name is not None:
-        stats["libraries_count"] = get_libraries_count(
-            db_path=db_path, table_name=table_name
-        )
-        stats["total_chunks"] = get_total_chunks(db_path=db_path, table_name=table_name)
+    if include_db:
+        stats["libraries_count"] = get_libraries_count()
+        stats["total_chunks"] = get_total_chunks()
 
     return stats
 
@@ -144,38 +135,15 @@ def increment_tool_call(tool_name: str) -> None:
     save_stats(stats)
 
 
-def get_libraries_count(
-    db_path: Path = DEFAULT_DB_PATH, table_name: str = DEFAULT_TABLE_NAME
-) -> int:
-    """Count the number of unique libraries in the database.
-
-    Args:
-        db_path: Path to LanceDB storage.
-        table_name: Table name to query.
-
-    Returns:
-        Number of unique libraries. Returns 0 if table doesn't exist.
-    """
-    libraries = list_libraries_with_versions(db_path=db_path, table_name=table_name)
-    return len(libraries)
+def get_libraries_count() -> int:
+    """Number of unique libraries in the database (0 if there is no table)."""
+    return len(list_libraries_with_versions())
 
 
-def get_total_chunks(
-    db_path: Path = DEFAULT_DB_PATH, table_name: str = DEFAULT_TABLE_NAME
-) -> int:
-    """Count the total number of chunks in the database.
-
-    Args:
-        db_path: Path to LanceDB storage.
-        table_name: Table name to query.
-
-    Returns:
-        Total number of chunks. Returns 0 if table doesn't exist.
-    """
-    table = _get_table(db_path, table_name)
-    if table is None:
-        return 0
-    return table.count_rows()
+def get_total_chunks() -> int:
+    """Total chunks in the database (0 if there is no table)."""
+    table = _get_table(get_settings().db_path, TABLE_NAME)
+    return 0 if table is None else table.count_rows()
 
 
 def reset_stats() -> None:

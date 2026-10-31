@@ -7,7 +7,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from tqdm import tqdm
 
-from openground.config import get_effective_config
+from openground.config import get_settings
 from openground.console import error, hint, warning
 
 
@@ -129,9 +129,9 @@ def _generate_embeddings_sentence_transformers(
     Returns:
         List of embedding vectors (each as a list of floats).
     """
-    config = get_effective_config()
-    batch_size = config["embeddings"]["batch_size"]
-    model_name = config["embeddings"]["embedding_model"]
+    config = get_settings()
+    batch_size = config.batch_size
+    model_name = config.embedding_model
     model = get_st_model(model_name)
 
     texts_list = list(texts)
@@ -175,9 +175,9 @@ def _generate_embeddings_fastembed(
     Returns:
         List of embedding vectors (each as a list of floats).
     """
-    config = get_effective_config()
-    batch_size = config["embeddings"]["batch_size"]
-    model_name = config["embeddings"]["embedding_model"]
+    config = get_settings()
+    batch_size = config.batch_size
+    model_name = config.embedding_model
 
     texts_list = list(texts)
     all_embeddings = []
@@ -218,8 +218,7 @@ def generate_embeddings(
         List of embedding vectors (each as a list of floats).
     """
 
-    config = get_effective_config()
-    backend = config["embeddings"]["embedding_backend"]
+    backend = get_settings().embedding_backend
 
     if backend == "fastembed":
         return _generate_embeddings_fastembed(texts, show_progress=show_progress)

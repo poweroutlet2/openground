@@ -5,9 +5,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 from tqdm import tqdm
 
+from openground.config import TABLE_NAME
 from openground.extract.common import ParsedPage
 from openground.query import delete_urls
-from openground.config import DEFAULT_DB_PATH, DEFAULT_TABLE_NAME
 
 
 class PageDiff(TypedDict):
@@ -117,8 +117,8 @@ def perform_update(
     library_name: str,
     version: str,
     raw_data_dir: Path,
-    db_path: Path = DEFAULT_DB_PATH,
-    table_name: str = DEFAULT_TABLE_NAME,
+    db_path: Path | None = None,
+    table_name: str = TABLE_NAME,
 ) -> UpdateSummary:
     """
     Perform complete update flow.
@@ -165,15 +165,16 @@ def perform_update(
     # Embed and insert new and modified pages
     pages_to_ingest = diff["new"] + [page for _, page in diff["modified"]]
     if pages_to_ingest:
-        from openground.ingest import ingest_pages_to_lancedb
+        from openground.ingest import ingest_pages
 
-        ingest_pages_to_lancedb(
+        ingest_pages(
             pages=pages_to_ingest,
             db_path=db_path,
             table_name=table_name,
         )
 
     # Update raw data folder
+    raw_data_dir.mkdir(parents=True, exist_ok=True)
     # Delete JSON files for deleted URLs
     for url in diff["deleted"]:
         slug = urlparse(url).path.strip("/").replace("/", "-") or "home"
