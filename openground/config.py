@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 from openground.console import UserError
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 TABLE_NAME = "documents"
 
@@ -41,8 +41,8 @@ def get_config_path() -> Path:
 
 
 def get_sources_path() -> Path:
-    """Path to the user sources registry (the only sources file)."""
-    return Path.home() / ".openground" / "sources.json"
+    """Remembered library sources, stored next to the config file."""
+    return get_config_path().parent / "sources.json"
 
 
 class Settings(BaseModel):
@@ -54,14 +54,16 @@ class Settings(BaseModel):
         "sentence-transformers"
     )
     embedding_model: str = "BAAI/bge-small-en-v1.5"
-    embedding_dimensions: int = 0
-    batch_size: int = 32
-    chunk_size: int = 800
-    chunk_overlap: int = 200
-    top_k: int = 5
+    embedding_dimensions: int = Field(0, ge=0)
+    batch_size: int = Field(32, gt=0)
+    chunk_size: int = Field(800, gt=0)
+    chunk_overlap: int = Field(200, ge=0)
+    top_k: int = Field(5, gt=0)
 
     @model_validator(mode="after")
-    def _default_dimensions(self) -> "Settings":
+    def _check(self) -> "Settings":
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size")
         if not self.embedding_dimensions:
             if self.embedding_model not in MODEL_DIMENSIONS:
                 raise ValueError(
@@ -81,6 +83,16 @@ class Settings(BaseModel):
 
 
 _settings_cache: Settings | None = None
+LEGACY_KEYS = {
+    "embeddings",
+    "query",
+    "extraction",
+    "sources",
+    "ingestion",
+    "db_path",
+    "table_name",
+    "raw_data_dir",
+}
 
 
 def get_settings() -> Settings:
@@ -90,7 +102,15 @@ def get_settings() -> Settings:
         path = get_config_path()
         try:
             text = path.read_text(encoding="utf-8").strip() if path.exists() else ""
-            _settings_cache = Settings.model_validate(json.loads(text) if text else {})
+            data = json.loads(text) if text else {}
+            if isinstance(data, dict) and (legacy := LEGACY_KEYS & set(data)):
+                problem = (
+                    f"the config format changed to flat keys (found {', '.join(sorted(legacy))}). "
+                    "Delete the file or see the README for the new format"
+                )
+            else:
+                _settings_cache = Settings.model_validate(data)
+                return _settings_cache
         except json.JSONDecodeError as e:
             problem = f"invalid JSON ({e})"
         except ValidationError as e:
@@ -98,18 +118,11 @@ def get_settings() -> Settings:
                 f"{'.'.join(map(str, err['loc'])) or 'config'}: {err['msg']}"
                 for err in e.errors()
             )
-        else:
-            return _settings_cache
         raise UserError(
             f"Invalid config file {path}: {problem}\n"
             "Fix it or delete the file to reset to defaults."
         )
     return _settings_cache
-
-
-def clear_settings_cache() -> None:
-    global _settings_cache
-    _settings_cache = None
 
 
 def get_library_raw_data_dir(library_name: str, version: str) -> Path:

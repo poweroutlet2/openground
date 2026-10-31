@@ -5,7 +5,6 @@ from pathlib import Path
 from urllib.parse import urlparse
 from tqdm import tqdm
 
-from openground.config import TABLE_NAME
 from openground.extract.common import ParsedPage
 from openground.query import delete_urls
 
@@ -25,30 +24,12 @@ class UpdateSummary(TypedDict):
 
 
 def compute_content_hash(content: str) -> str:
-    """
-    Compute SHA-256 hash of content.
-
-    Args:
-        content: The content string to hash
-
-    Returns:
-        Hexadecimal SHA-256 hash
-    """
+    """SHA-256 hex digest of page content."""
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def load_existing_pages_hashes(raw_data_dir: Path) -> dict[str, str]:
-    """
-    Load existing pages and return {url: hash} dict.
-
-    Only reads url and content fields for efficiency.
-
-    Args:
-        raw_data_dir: Directory containing JSON page files
-
-    Returns:
-        Dictionary mapping URLs to content hashes
-    """
+    """Map each stored page URL to the hash of its content."""
     hashes: dict[str, str] = {}
     if not raw_data_dir.exists():
         return hashes
@@ -70,16 +51,7 @@ def load_existing_pages_hashes(raw_data_dir: Path) -> dict[str, str]:
 def compare_pages(
     extracted_pages: list[ParsedPage], existing_hashes: dict[str, str]
 ) -> PageDiff:
-    """
-    Compare extracted pages with existing and return diff.
-
-    Args:
-        extracted_pages: List of newly extracted pages
-        existing_hashes: Dict of {url: hash} from existing data
-
-    Returns:
-        PageDiff with new, deleted, modified, and unchanged pages
-    """
+    """Split extracted pages into new, modified, unchanged and deleted (by URL)."""
     extracted_dict: dict[str, ParsedPage] = {
         page["url"]: page for page in extracted_pages
     }
@@ -117,28 +89,8 @@ def perform_update(
     library_name: str,
     version: str,
     raw_data_dir: Path,
-    db_path: Path | None = None,
-    table_name: str = TABLE_NAME,
 ) -> UpdateSummary:
-    """
-    Perform complete update flow.
-
-    1. Compute diff between extracted and existing pages
-    2. Delete LanceDB records for modified+deleted pages
-    3. Embed and insert new+modified pages
-    4. Update raw data folder to match
-
-    Args:
-        extracted_pages: List of newly extracted pages
-        library_name: Name of the library
-        version: Version string
-        db_path: Path to LanceDB database
-        table_name: Name of the LanceDB table
-        raw_data_dir: Path to raw data directory for this library/version
-
-    Returns:
-        UpdateSummary with counts of added, deleted, modified, and unchanged pages
-    """
+    """Diff against stored pages, then re-embed what changed and sync the raw files."""
     if not extracted_pages:
         raise ValueError(
             "Extraction produced no pages. Please check your source configuration."
@@ -158,8 +110,6 @@ def perform_update(
                 urls=batch,
                 library_name=library_name,
                 version=version,
-                db_path=db_path,
-                table_name=table_name,
             )
 
     # Embed and insert new and modified pages
@@ -169,8 +119,6 @@ def perform_update(
 
         ingest_pages(
             pages=pages_to_ingest,
-            db_path=db_path,
-            table_name=table_name,
         )
 
     # Update raw data folder

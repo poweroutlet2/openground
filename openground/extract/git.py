@@ -9,7 +9,7 @@ from openground.extract.common import (
     filter_documentation_files,
     process_documentation_files,
 )
-from openground.console import error
+from openground.console import UserError
 
 
 def parse_git_web_url(url: str) -> tuple[str, str | None, str | None]:
@@ -124,37 +124,16 @@ async def extract_repo(
     docs_paths: list[str],
     output_dir: Path,
     library_name: str,
-    version: str | None = None,
+    version: str = "latest",
 ):
-    """
-    Clone repo and extract documentation files.
-
-    Args:
-        repo_url: URL of the git repository.
-        docs_paths: Paths within the repo to extract (e.g., ['docs/', 'api/']).
-        output_dir: Directory to save the processed JSON files.
-        library_name: Name of the library.
-    """
+    """Shallow-clone a repo ref (default branch for 'latest') and extract its docs."""
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
         # Detect default branch for URL construction
         default_branch = get_default_branch(repo_url)
 
-        # Resolve the actual ref name if version is provided
-        version_to_store: str
-        if version and version != "latest":
-            if (resolved_ref := resolve_remote_ref(repo_url, version)) is None:
-                alt_version = version[1:] if version.startswith("v") else f"v{version}"
-                error(
-                    f"Ref (tag or branch) '{version}' not found in repository (checked '{version}' and '{alt_version}')"
-                )
-                return
-            ref_to_checkout = resolved_ref
-            version_to_store = resolved_ref
-        else:
-            ref_to_checkout = default_branch
-            version_to_store = "latest"
+        ref_to_checkout = default_branch if version == "latest" else version
 
         print(f"Cloning {repo_url} (shallow, no-checkout, ref: {ref_to_checkout})...")
 
@@ -174,8 +153,7 @@ async def extract_repo(
 
         result = subprocess.run(clone_cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            error(f"Failed to clone repository: {result.stderr}")
-            return
+            raise UserError(f"Failed to clone repository: {result.stderr.strip()}")
 
         # Sparse checkout configuration
 
@@ -214,8 +192,7 @@ async def extract_repo(
                     text=True,
                 )
         except subprocess.CalledProcessError as e:
-            error(f"Failed to set sparse-checkout: {e.stderr}")
-            return
+            raise UserError(f"Failed to set sparse-checkout: {e.stderr}")
 
         print("Checking out files...")
         try:
@@ -227,8 +204,7 @@ async def extract_repo(
                 text=True,
             )
         except subprocess.CalledProcessError as e:
-            error(f"Failed to checkout files: {e.stderr}")
-            return
+            raise UserError(f"Failed to checkout files: {e.stderr}")
 
         # Process files
         results: list[ParsedPage] = []
@@ -249,9 +225,12 @@ async def extract_repo(
         doc_files = sorted(list(set(all_doc_files)))
 
         if not doc_files:
-            path_msg = "entire repository" if wants_entire_repo else f"paths: {', '.join(git_docs_paths)}"
-            error(f"No documentation files found in {path_msg}")
-            return
+            path_msg = (
+                "entire repository"
+                if wants_entire_repo
+                else f"paths: {', '.join(git_docs_paths)}"
+            )
+            raise UserError(f"No documentation files found in {path_msg}")
 
         print(f"Processing {len(doc_files)} files...")
 
@@ -273,14 +252,13 @@ async def extract_repo(
             doc_files=doc_files,
             url_generator=make_git_url,
             library_name=library_name,
-            version=version_to_store,
+            version=version,
             default_description=f"Documentation file from {repo_url}",
             base_path=temp_path,
         )
 
         if not results:
-            error("No documentation files found after processing.")
-            return
+            raise UserError("No documentation files found after processing.")
 
         print(f"Found {len(results)} valid documentation pages. Saving...")
         await save_results(results, output_dir)

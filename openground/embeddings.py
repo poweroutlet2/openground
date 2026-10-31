@@ -120,15 +120,7 @@ def _generate_embeddings_sentence_transformers(
     texts: Iterable[str],
     show_progress: bool = True,
 ) -> list[list[float]]:
-    """Generate embeddings using sentence-transformers backend.
-
-    Args:
-        texts: Iterable of text strings to embed.
-        show_progress: Whether to show a progress bar.
-
-    Returns:
-        List of embedding vectors (each as a list of floats).
-    """
+    """Embed texts with sentence-transformers."""
     config = get_settings()
     batch_size = config.batch_size
     model_name = config.embedding_model
@@ -164,17 +156,7 @@ def _generate_embeddings_fastembed(
     texts: Iterable[str],
     show_progress: bool = True,
 ) -> list[list[float]]:
-    """Generate embeddings using fastembed backend.
-
-    Uses passage_embed for document embeddings.
-
-    Args:
-        texts: Iterable of text strings to embed.
-        show_progress: Whether to show a progress bar.
-
-    Returns:
-        List of embedding vectors (each as a list of floats).
-    """
+    """Embed passages with fastembed."""
     config = get_settings()
     batch_size = config.batch_size
     model_name = config.embedding_model
@@ -192,12 +174,9 @@ def _generate_embeddings_fastembed(
         disable=not show_progress,
         file=sys.stderr,
     ) as pbar:
-        # fastembed processes in batches internally, but we can control batching
         for i in range(0, len(texts_list), batch_size):
             batch = texts_list[i : i + batch_size]
-            # passage_embed returns a generator of numpy arrays
             batch_embeddings = list(model.passage_embed(batch))
-            # Convert numpy arrays to lists of floats
             all_embeddings.extend([emb.tolist() for emb in batch_embeddings])
             pbar.update(len(batch))
 
@@ -208,16 +187,7 @@ def generate_embeddings(
     texts: Iterable[str],
     show_progress: bool = True,
 ) -> list[list[float]]:
-    """Generate embeddings for documents using the specified backend.
-
-    Args:
-        texts: Iterable of text strings to embed.
-        show_progress: Whether to show a progress bar.
-
-    Returns:
-        List of embedding vectors (each as a list of floats).
-    """
-
+    """Embed texts with the configured backend."""
     backend = get_settings().embedding_backend
 
     if backend == "fastembed":

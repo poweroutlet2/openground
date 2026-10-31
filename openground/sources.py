@@ -1,9 +1,10 @@
-"""Remembered library sources (~/.openground/sources.json)."""
+"""Remembered library sources (sources.json next to config.json)."""
 
 import json
 from typing import Literal, TypedDict
 
 from openground.config import get_sources_path
+from openground.console import UserError
 
 
 class LibrarySource(TypedDict, total=False):
@@ -21,8 +22,10 @@ def load_sources() -> dict[str, LibrarySource]:
         return {}
     try:
         return json.loads(path.read_text(encoding="utf-8") or "{}")
-    except json.JSONDecodeError:
-        return {}
+    except json.JSONDecodeError as e:
+        raise UserError(
+            f"Invalid sources file {path}: {e}\nFix or delete it (remembered sources are lost)."
+        )
 
 
 def _write(sources: dict[str, LibrarySource]) -> None:

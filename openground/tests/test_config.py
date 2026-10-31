@@ -2,8 +2,8 @@ import json
 
 import pytest
 
+import openground.config as config
 from openground.config import (
-    clear_settings_cache,
     get_config_path,
     get_library_raw_data_dir,
     get_settings,
@@ -15,7 +15,7 @@ def write_config(data) -> None:
     path = get_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(data if isinstance(data, str) else json.dumps(data))
-    clear_settings_cache()
+    config._settings_cache = None
 
 
 def test_defaults_without_config_file():
@@ -75,3 +75,22 @@ def test_invalid_config_raises_user_error(content):
 def test_empty_config_file_uses_defaults():
     write_config("")
     assert get_settings().top_k == 5
+
+
+@pytest.mark.parametrize(
+    "legacy",
+    [
+        {"embeddings": {"batch_size": 1}},
+        {"db_path": "/x"},
+        {"table_name": "t"},
+        {"sources": {}},
+    ],
+)
+def test_legacy_config_gets_actionable_message(legacy):
+    write_config(legacy)
+    with pytest.raises(UserError, match="format changed to flat keys"):
+        get_settings()
+
+
+def test_sources_path_sits_next_to_config():
+    assert config.get_sources_path() == get_config_path().parent / "sources.json"

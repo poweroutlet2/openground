@@ -1,122 +1,115 @@
 import json
-from pathlib import Path
-from typing import Optional, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    import lancedb
     import lancedb.table
 
 from openground.config import TABLE_NAME, get_settings
+from openground.console import UserError
 from openground.embeddings import generate_embeddings
 
-# Caches for database connection and table
-_db_cache: dict[str, Any] = {}
-_table_cache: dict[tuple[str, str], Any] = {}
-_metadata_cache: dict[tuple[str, str], dict[str, Any]] = {}
 
-
-def _resolve_db_path(db_path: Path | None) -> Path:
-    return get_settings().db_path if db_path is None else db_path
-
-
-def _get_db(db_path: Path) -> "lancedb.DBConnection":
-    """Get a cached database connection."""
+def _get_table() -> Optional["lancedb.table.Table"]:
+    """Open the documents table fresh so other processes' writes are visible."""
     import lancedb
 
-    path_str = str(db_path)
-    if path_str not in _db_cache:
-        _db_cache[path_str] = lancedb.connect(path_str)
-    return _db_cache[path_str]
-
-
-def _get_table(db_path: Path, table_name: str) -> Optional["lancedb.table.Table"]:
-    """Get a cached table handle."""
-    cache_key = (str(db_path), table_name)
-    if cache_key not in _table_cache:
-        db = _get_db(db_path)
-        if table_name not in db.table_names():
-            return None
-        _table_cache[cache_key] = db.open_table(table_name)
-    return _table_cache[cache_key]
-
-
-def clear_query_caches():
-    """Clear all query-related caches."""
-    _db_cache.clear()
-    _table_cache.clear()
-    _metadata_cache.clear()
+    db = lancedb.connect(str(get_settings().db_path))
+    return db.open_table(TABLE_NAME) if TABLE_NAME in db.table_names() else None
 
 
 def _escape_sql_string(value: str) -> str:
-    """
-    Escape a string value for safe use in LanceDB SQL WHERE clauses.
-
-    This function escapes single quotes and backslashes to prevent SQL injection.
-    Note: LanceDB uses DataFusion which parses SQL, so proper escaping is critical.
-
-    Args:
-        value: The string value to escape
-
-    Returns:
-        Escaped string safe for use in SQL string literals
-    """
-    # Remove null bytes (can cause string truncation in some parsers)
+    """Escape a value for a single-quoted LanceDB (DataFusion) SQL literal."""
     value = value.replace("\x00", "")
-    # Escape backslashes first (must be done before escaping quotes)
-    value = value.replace("\\", "\\\\")
-    # Escape single quotes (SQL standard: ' becomes '')
-    value = value.replace("'", "''")
-    return value
+    return value.replace("\\", "\\\\").replace("'", "''")
+
+
+def _match(library_name: str, version: str) -> str:
+    return (
+        f"library_name = '{_escape_sql_string(library_name)}' "
+        f"AND version = '{_escape_sql_string(version)}'"
+    )
+
+
+def check_embedding_config() -> None:
+    """Fail if the stored embeddings were made with a different backend/model than configured."""
+    table = _get_table()
+    if table is None or not table.schema.metadata:
+        return
+
+    stored = {
+        (k.decode() if isinstance(k, bytes) else k): (
+            v.decode() if isinstance(v, bytes) else v
+        )
+        for k, v in table.schema.metadata.items()
+    }
+    settings = get_settings()
+    current = (settings.embedding_backend, settings.embedding_model)
+    if (stored.get("embedding_backend"), stored.get("embedding_model")) != current:
+        raise UserError(
+            "Embedding config mismatch.\n"
+            f"  Stored:  {stored.get('embedding_backend')} / {stored.get('embedding_model')}\n"
+            f"  Config:  {current[0]} / {current[1]}\n"
+            "Set embedding_backend and embedding_model in config.json to the stored "
+            "values (see `openground config`), or run `openground reset` and re-add "
+            "your libraries."
+        )
+
+
+def check_library_version(library_name: str | None, version: str | None) -> None:
+    """Raise a helpful UserError if the library/version filter matches nothing stored."""
+    libraries = list_libraries_with_versions()
+    if library_name is not None and library_name not in libraries:
+        available = ", ".join(libraries) or "none (add one with `openground add`)"
+        raise UserError(
+            f"Library '{library_name}' not found. Available libraries: {available}"
+        )
+    if version is None:
+        return
+
+    if library_name is not None:
+        versions = libraries[library_name]
+    else:
+        versions = sorted({v for vs in libraries.values() for v in vs})
+    if version not in versions:
+        scope = f" for library '{library_name}'" if library_name else ""
+        raise UserError(
+            f"Version '{version}' not found{scope}. "
+            f"Available versions: {', '.join(versions) or 'none'}"
+        )
 
 
 def search(
     query: str,
     version: Optional[str] = None,
-    db_path: Path | None = None,
-    table_name: str = TABLE_NAME,
     library_name: Optional[str] = None,
     top_k: Optional[int] = None,
     show_progress: bool = True,
 ) -> str:
-    """
-    Run a hybrid search (semantic + BM25) against the LanceDB table and return a
-    markdown-friendly summary string.
-
-    Args:
-        query: User query text.
-        version: Optional version to filter results by.
-        db_path: Path to LanceDB storage (defaults to the configured db).
-        table_name: Table name to search.
-        library_name: Optional filter on library name column.
-        top_k: Number of results to return (defaults to the configured top_k).
-        show_progress: Whether to show progress during embedding.
-    """
-    db_path = _resolve_db_path(db_path)
-    table = _get_table(db_path, table_name)
+    """Hybrid (semantic + BM25) search; returns a markdown summary of the matches."""
+    check_library_version(library_name, version)
+    check_embedding_config()
+    table = _get_table()
     if table is None:
         return "Found 0 matches."
 
     query_vec = generate_embeddings([query], show_progress=show_progress)[0]
+    builder = table.search(query_type="hybrid").text(query).vector(query_vec)
 
-    search_builder = table.search(query_type="hybrid").text(query).vector(query_vec)
-
+    filters = []
     if version:
-        safe_version = _escape_sql_string(version)
-        search_builder = search_builder.where(f"version = '{safe_version}'")
-
+        filters.append(f"version = '{_escape_sql_string(version)}'")
     if library_name:
-        safe_name = _escape_sql_string(library_name)
-        search_builder = search_builder.where(f"library_name = '{safe_name}'")
+        filters.append(f"library_name = '{_escape_sql_string(library_name)}'")
+    if filters:
+        builder = builder.where(" AND ".join(filters))
 
-    results = search_builder.limit(top_k or get_settings().top_k).to_list()
-
+    results = builder.limit(top_k or get_settings().top_k).to_list()
     if not results:
         return "Found 0 matches."
 
     lines = [f"Found {len(results)} match{'es' if len(results) != 1 else ''}."]
     for idx, item in enumerate(results, start=1):
         title = item.get("title") or "(no title)"
-        # Return the full chunk so downstream consumers (LLM) see the whole text.
         snippet = (item.get("content") or "").strip()
         source = item.get("url") or "unknown"
         item_version = item.get("version") or version or "latest"
@@ -128,11 +121,9 @@ def search(
         elif score:
             score_str = f", score={score}"
 
-        # Embed tool call hint for fetching full content
         tool_hint = json.dumps(
             {"tool": "get_full_content", "url": source, "version": item_version}
         )
-
         lines.append(
             f'{idx}. **{title}**: "{snippet}" (Source: {source}, Version: {item_version}{score_str})\n'
             f"   To get full page content: {tool_hint}"
@@ -141,267 +132,103 @@ def search(
     return "\n".join(lines)
 
 
-def list_libraries(
-    db_path: Path | None = None, table_name: str = TABLE_NAME
-) -> list[str]:
-    """
-    Return sorted unique non-null library names from the table.
-    """
-    libs_with_versions = list_libraries_with_versions(
-        db_path=db_path, table_name=table_name
+def list_libraries_with_versions() -> dict[str, list[str]]:
+    """Map each stored library to its sorted versions (empty if nothing is stored)."""
+    table = _get_table()
+    if table is None:
+        return {}
+
+    df = (
+        table.search()
+        .select(["library_name", "version"])
+        .to_pandas()
+        .drop_duplicates()
+        .dropna()
     )
-    return sorted(libs_with_versions.keys())
+    result: dict[str, list[str]] = {}
+    for lib_name, version in zip(df["library_name"], df["version"]):
+        result.setdefault(lib_name, []).append(version)
+    return {name: sorted(versions) for name, versions in sorted(result.items())}
 
 
-def list_libraries_with_versions(
-    db_path: Path | None = None,
-    table_name: str = TABLE_NAME,
-    search_term: Optional[str] = None,
-) -> dict[str, list[str]]:
-    """
-    Return a dictionary mapping library names to their sorted version lists.
-
-    Args:
-        db_path: Path to LanceDB storage (defaults to the configured db).
-        table_name: Table name to search.
-        search_term: Optional search term to filter library names (case-insensitive).
-
-    Returns:
-        Dictionary mapping library names to sorted lists of versions.
-        Returns empty dict if no libraries found or table doesn't exist.
-    """
-    db_path = _resolve_db_path(db_path)
-    cache_key = (str(db_path), table_name)
-    if cache_key in _metadata_cache:
-        result = _metadata_cache[cache_key]
-    else:
-        table = _get_table(db_path, table_name)
-        if table is None:
-            return {}
-
-        # Load unique pairs efficiently
-        df = (
-            table.search()
-            .select(["library_name", "version"])
-            .to_pandas()
-            .drop_duplicates()
-            .dropna()
-        )
-
-        # Group by library name and collect unique versions
-        result = {}
-        for _, row in df.iterrows():
-            lib_name = row["library_name"]
-            version = row["version"]
-            if lib_name not in result:
-                result[lib_name] = []
-            if version not in result[lib_name]:
-                result[lib_name].append(version)
-
-        for lib_name in result:
-            result[lib_name] = sorted(result[lib_name])
-
-        # Cache the full results
-        _metadata_cache[cache_key] = result
-
-    if search_term:
-        term_lower = search_term.lower()
-        result = {
-            lib_name: versions
-            for lib_name, versions in result.items()
-            if term_lower in lib_name.lower()
-        }
-
-    return dict(sorted(result.items()))
-
-
-def get_full_content(
-    url: str,
-    version: str,
-    db_path: Path | None = None,
-    table_name: str = TABLE_NAME,
-) -> str:
-    """
-    Retrieve the full content of a document by its URL and version.
-
-    Args:
-        url: URL of the document to retrieve.
-        version: Version of the document to retrieve.
-        db_path: Path to LanceDB storage (defaults to the configured db).
-        table_name: Table name to search.
-
-    Returns:
-        Formatted markdown string with title, source URL, and full content.
-    """
-    db_path = _resolve_db_path(db_path)
-    table = _get_table(db_path, table_name)
+def get_full_content(url: str, version: str) -> str:
+    """Return the full text of a stored page, reassembled from its chunks."""
+    table = _get_table()
     if table is None:
         return f"No content found for URL: {url}"
 
-    # Query all chunks for this URL and version
-    safe_url = _escape_sql_string(url)
-    safe_version = _escape_sql_string(version)
     df = (
         table.search()
-        .where(f"url = '{safe_url}' AND version = '{safe_version}'")
+        .where(
+            f"url = '{_escape_sql_string(url)}' "
+            f"AND version = '{_escape_sql_string(version)}'"
+        )
         .select(["title", "content", "chunk_index"])
         .to_pandas()
     )
-
     if df.empty:
         return f"No content found for URL: {url} (version: {version})"
 
-    # Sort by chunk_index and concatenate content
     df = df.sort_values("chunk_index")
-    full_content = "\n\n".join(df["content"].tolist())
-
     title = df.iloc[0].get("title", "(no title)")
+    full_content = "\n\n".join(df["content"].tolist())
     return f"# {title}\n\nSource: {url}\nVersion: {version}\n\n{full_content}"
 
 
-def get_library_stats(
-    library_name: str,
-    version: str,
-    db_path: Path | None = None,
-    table_name: str = TABLE_NAME,
-) -> dict | None:
-    """Get statistics for a library version (chunk count, unique URLs, etc.)."""
-    db_path = _resolve_db_path(db_path)
-    table = _get_table(db_path, table_name)
+def get_library_stats(library_name: str, version: str) -> dict | None:
+    """Chunk/page counts and sample titles for a library version, or None if absent."""
+    table = _get_table()
     if table is None:
         return None
 
-    safe_name = _escape_sql_string(library_name)
-    safe_version = _escape_sql_string(version)
-    filter_str = f"library_name = '{safe_name}' AND version = '{safe_version}'"
-
-    # Use count_rows for chunk count
+    filter_str = _match(library_name, version)
     chunk_count = table.count_rows(filter=filter_str)
     if chunk_count == 0:
         return None
 
-    # Get sample titles and unique URL count more efficiently
-    # We only need a few titles, so we can limit the search
-    df_titles = (
-        table.search().where(filter_str).select(["title", "url"]).limit(500).to_pandas()
-    )
-
-    titles = [t for t in df_titles["title"].unique().tolist() if t and str(t).strip()][
-        :5
-    ]
-
-    unique_urls = df_titles["url"].nunique()
-    if chunk_count > 500:
-        # If there are more chunks, unique_urls might be higher than our sample
-        # For now, we'll just note it's at least this many, or we can load all URLs
-        # which is usually okay as URLs are small strings.
-        df_all_urls = table.search().where(filter_str).select(["url"]).to_pandas()
-        unique_urls = df_all_urls["url"].nunique()
-
+    df = table.search().where(filter_str).select(["title", "url"]).to_pandas()
+    titles = [t for t in df["title"].unique().tolist() if t and str(t).strip()][:5]
     return {
         "library_name": library_name,
         "version": version,
         "chunk_count": chunk_count,
-        "unique_urls": unique_urls,
+        "unique_urls": df["url"].nunique(),
         "titles": titles,
     }
 
 
-def delete_library(
-    library_name: str,
-    version: str,
-    db_path: Path | None = None,
-    table_name: str = TABLE_NAME,
-) -> int:
-    """Delete all documents for a library version. Returns count of deleted rows."""
-    db_path = _resolve_db_path(db_path)
-    table = _get_table(db_path, table_name)
+def count_chunks() -> int:
+    table = _get_table()
+    return 0 if table is None else table.count_rows()
+
+
+def delete_library(library_name: str, version: str) -> int:
+    """Delete all chunks of a library version; returns the number deleted."""
+    table = _get_table()
     if table is None:
         return 0
 
-    safe_name = _escape_sql_string(library_name)
-    safe_version = _escape_sql_string(version)
-
-    # Get count before deletion
-    count = table.count_rows(
-        filter=f"library_name = '{safe_name}' AND version = '{safe_version}'"
-    )
-
-    # Delete rows
-    table.delete(f"library_name = '{safe_name}' AND version = '{safe_version}'")
-    return count
-
-
-def delete_urls(
-    urls: list[str],
-    library_name: str,
-    version: str,
-    db_path: Path | None = None,
-    table_name: str = TABLE_NAME,
-) -> int:
-    """
-    Delete all chunks for given URLs from LanceDB.
-
-    Args:
-        urls: List of URLs to delete
-        library_name: Library name filter
-        version: Version filter
-        db_path: Path to LanceDB storage (defaults to the configured db)
-        table_name: Table name
-
-    Returns:
-        Number of deleted rows
-    """
-    db_path = _resolve_db_path(db_path)
-    table = _get_table(db_path, table_name)
-    if table is None:
-        return 0
-
-    if not urls:
-        return 0
-
-    safe_name = _escape_sql_string(library_name)
-    safe_version = _escape_sql_string(version)
-
-    # Build WHERE clause with OR conditions for URLs to delete
-    safe_urls = [_escape_sql_string(url) for url in urls]
-    url_conditions = " OR ".join(f"url = '{url}'" for url in safe_urls)
-    filter_str = f"library_name = '{safe_name}' AND version = '{safe_version}' AND ({url_conditions})"
-
+    filter_str = _match(library_name, version)
     count = table.count_rows(filter=filter_str)
-
     table.delete(filter_str)
     return count
 
 
-def library_version_exists(
-    library_name: str,
-    version: str,
-    db_path: Path | None = None,
-    table_name: str = TABLE_NAME,
-) -> bool:
-    """
-    Check if library version exists in LanceDB.
+def delete_urls(urls: list[str], library_name: str, version: str) -> int:
+    """Delete all chunks of the given pages; returns the number deleted."""
+    table = _get_table()
+    if table is None or not urls:
+        return 0
 
-    Args:
-        library_name: Library name to check
-        version: Version to check
-        db_path: Path to LanceDB storage (defaults to the configured db)
-        table_name: Table name
+    url_conditions = " OR ".join(f"url = '{_escape_sql_string(u)}'" for u in urls)
+    filter_str = f"{_match(library_name, version)} AND ({url_conditions})"
+    count = table.count_rows(filter=filter_str)
+    table.delete(filter_str)
+    return count
 
-    Returns:
-        True if library version exists, False otherwise
-    """
-    db_path = _resolve_db_path(db_path)
-    table = _get_table(db_path, table_name)
-    if table is None:
-        return False
 
-    safe_name = _escape_sql_string(library_name)
-    safe_version = _escape_sql_string(version)
+def library_version_exists(library_name: str, version: str) -> bool:
+    table = _get_table()
     return (
-        table.count_rows(
-            filter=f"library_name = '{safe_name}' AND version = '{safe_version}'"
-        )
-        > 0
+        table is not None and table.count_rows(filter=_match(library_name, version)) > 0
     )

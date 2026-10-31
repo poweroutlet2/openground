@@ -56,53 +56,11 @@ def chunk_document(page: ParsedPage) -> list[dict]:
     ]
 
 
-def _get_table_metadata(table) -> dict | None:
-    """Read the embedding backend/model stamped into the table schema."""
-    if table.schema.metadata is None:
-        return None
+def ensure_table(db) -> "lancedb.table.Table":
+    if TABLE_NAME in db.table_names():
+        return db.open_table(TABLE_NAME)
 
-    metadata = {
-        key.decode("utf-8") if isinstance(key, bytes) else key: (
-            value.decode("utf-8") if isinstance(value, bytes) else value
-        )
-        for key, value in table.schema.metadata.items()
-    }
-    if "embedding_backend" in metadata and "embedding_model" in metadata:
-        return {
-            "embedding_backend": metadata["embedding_backend"],
-            "embedding_model": metadata["embedding_model"],
-        }
-    return None
-
-
-def _validate_table_metadata(table, backend: str, model: str) -> None:
-    stored = _get_table_metadata(table)
-    if stored is None:
-        raise ValueError("Table metadata not found")
-
-    if stored["embedding_backend"] != backend or stored["embedding_model"] != model:
-        raise ValueError(
-            f"Embedding configuration mismatch detected!\n\n"
-            f"This table was created with:\n"
-            f"  Backend: {stored['embedding_backend']}\n"
-            f"  Model: {stored['embedding_model']}\n\n"
-            f"Current configuration is:\n"
-            f"  Backend: {backend}\n"
-            f"  Model: {model}\n\n"
-            f"To resolve this, change your config back to the original settings,\n"
-            f"or run `openground reset` and re-add your libraries."
-        )
-
-
-def ensure_table(db, table_name: str) -> "lancedb.table.Table":
     settings = get_settings()
-    if table_name in db.table_names():
-        table = db.open_table(table_name)
-        _validate_table_metadata(
-            table, settings.embedding_backend, settings.embedding_model
-        )
-        return table
-
     schema = pa.schema(
         [
             pa.field("url", pa.string()),
@@ -120,25 +78,17 @@ def ensure_table(db, table_name: str) -> "lancedb.table.Table":
             "embedding_model": settings.embedding_model,
         },
     )
-    return db.create_table(table_name, data=[], mode="create", schema=schema)
+    return db.create_table(TABLE_NAME, data=[], mode="create", schema=schema)
 
 
-def ingest_pages(
-    pages: list[ParsedPage],
-    db_path: Path | None = None,
-    table_name: str = TABLE_NAME,
-) -> None:
+def ingest_pages(pages: list[ParsedPage]) -> None:
     """Chunk pages, embed them, and insert into LanceDB."""
     if not pages:
         print("No pages to ingest.")
         return
 
-    settings = get_settings()
-    if db_path is None:
-        db_path = settings.db_path
-
-    db = lancedb.connect(str(db_path))
-    table = ensure_table(db, table_name)
+    db = lancedb.connect(str(get_settings().db_path))
+    table = ensure_table(db)
 
     all_records = []
     for page in tqdm(pages, desc="Chunking documents", unit="page"):

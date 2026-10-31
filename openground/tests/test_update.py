@@ -15,6 +15,7 @@ from openground.update import (
     compare_pages,
     perform_update,
 )
+from openground.config import TABLE_NAME, get_settings
 from openground.extract.common import ParsedPage
 
 
@@ -196,7 +197,7 @@ class TestComparePages:
 class TestPerformUpdate:
     """Test the complete update flow."""
 
-    def test_raises_on_empty_extraction(self, temp_raw_data_dir, temp_db_path):
+    def test_raises_on_empty_extraction(self, temp_raw_data_dir):
         """Should raise ValueError if extraction produces no pages."""
         # Arrange: Create library directory with existing data
         lib_dir = temp_raw_data_dir / "testlib" / "latest"
@@ -221,14 +222,12 @@ class TestPerformUpdate:
                 library_name="testlib",
                 version="latest",
                 raw_data_dir=lib_dir,
-                db_path=temp_db_path,
-                table_name="test_table",
             )
 
     @patch("openground.ingest.ingest_pages")
     @patch("openground.update.delete_urls")
     def test_new_library_update(
-        self, mock_delete, mock_ingest, temp_raw_data_dir, temp_db_path, sample_pages
+        self, mock_delete, mock_ingest, temp_raw_data_dir, sample_pages
     ):
         """Test updating when no existing data exists (like initial add)."""
         # Arrange: Create empty library directory
@@ -241,8 +240,6 @@ class TestPerformUpdate:
             library_name="testlib",
             version="latest",
             raw_data_dir=lib_dir,
-            db_path=temp_db_path,
-            table_name="test_table",
         )
 
         # Assert: All pages should be added
@@ -261,7 +258,7 @@ class TestPerformUpdate:
     @patch("openground.ingest.ingest_pages")
     @patch("openground.update.delete_urls")
     def test_incremental_update_no_changes(
-        self, mock_delete, mock_ingest, temp_raw_data_dir, temp_db_path, sample_pages
+        self, mock_delete, mock_ingest, temp_raw_data_dir, sample_pages
     ):
         """Test update when nothing has changed."""
         from urllib.parse import urlparse
@@ -282,8 +279,6 @@ class TestPerformUpdate:
             library_name="testlib",
             version="latest",
             raw_data_dir=lib_dir,
-            db_path=temp_db_path,
-            table_name="test_table",
         )
 
         # Assert: Nothing should change
@@ -299,7 +294,7 @@ class TestPerformUpdate:
     @patch("openground.ingest.ingest_pages")
     @patch("openground.update.delete_urls")
     def test_incremental_update_with_changes(
-        self, mock_delete, mock_ingest, temp_raw_data_dir, temp_db_path
+        self, mock_delete, mock_ingest, temp_raw_data_dir
     ):
         """Test update with new, modified, and deleted pages."""
         from urllib.parse import urlparse
@@ -363,8 +358,6 @@ class TestPerformUpdate:
             library_name="testlib",
             version="latest",
             raw_data_dir=lib_dir,
-            db_path=temp_db_path,
-            table_name="test_table",
         )
 
         # Assert: Correct counts for each category
@@ -386,7 +379,7 @@ class TestPerformUpdate:
 class TestDeleteUrls:
     """Test the delete_urls function in query.py."""
 
-    def test_delete_empty_list(self, temp_db_path):
+    def test_delete_empty_list(self):
         """Should handle empty URL list gracefully."""
         from openground.query import delete_urls
 
@@ -398,20 +391,18 @@ class TestDeleteUrls:
             urls=urls,
             library_name="testlib",
             version="latest",
-            db_path=temp_db_path,
-            table_name="test_table",
         )
 
         # Assert: Should return 0 without error
         assert count == 0
 
-    def test_delete_urls_escaping(self, temp_db_path):
+    def test_delete_urls_escaping(self):
         """Should properly escape special characters in URLs."""
         from openground.query import delete_urls
         import pyarrow as pa
 
         # Arrange: Create test table with URL containing special characters
-        db = lancedb.connect(str(temp_db_path))
+        db = lancedb.connect(str(get_settings().db_path))
         schema = pa.schema(
             [
                 pa.field("url", pa.string()),
@@ -420,7 +411,7 @@ class TestDeleteUrls:
                 pa.field("content", pa.string()),
             ]
         )
-        table = db.create_table("test_table", data=[], schema=schema)
+        table = db.create_table(TABLE_NAME, data=[], schema=schema)
 
         special_url = "https://example.com/page?foo=bar&baz=qux'test"
         table.add(
@@ -439,8 +430,6 @@ class TestDeleteUrls:
             urls=[special_url],
             library_name="testlib",
             version="latest",
-            db_path=temp_db_path,
-            table_name="test_table",
         )
 
         # Assert: Should delete exactly 1 row without raising SQL error
@@ -450,7 +439,7 @@ class TestDeleteUrls:
 class TestLibraryVersionExists:
     """Test the library_version_exists function in query.py."""
 
-    def test_nonexistent_library(self, temp_db_path):
+    def test_nonexistent_library(self):
         """Should return False for nonexistent library."""
         from openground.query import library_version_exists
 
@@ -461,8 +450,6 @@ class TestLibraryVersionExists:
         result = library_version_exists(
             library_name=library,
             version="latest",
-            db_path=temp_db_path,
-            table_name="test_table",
         )
 
         # Assert: Should return False
