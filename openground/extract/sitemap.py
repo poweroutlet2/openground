@@ -86,17 +86,7 @@ async def process_url(
     library_name: str,
     version: str,
 ) -> ParsedPage | None:
-    """
-    Process a single URL.
-
-    Args:
-        semaphore: The semaphore to use to limit the number of concurrent requests.
-        session: The session to use to make the request.
-        url: The URL to process.
-        library_name: The name of the library/framework for this documentation.
-        version: The version string to store in the parsed page.
-    """
-
+    """Fetch and parse one page; returns None on any failure."""
     async with semaphore:
         try:
             async with session.get(url, timeout=ClientTimeout(total=10)) as response:
@@ -120,16 +110,7 @@ async def process_url(
 def parse_html(
     url: str, html: str, last_modified: str, library_name: str, version: str
 ) -> ParsedPage | None:
-    """
-    Parse the HTML of a page.
-
-    Args:
-        url: The URL of the page.
-        html: The HTML of the page.
-        last_modified: The Last-Modified header value.
-        library_name: The name of the library/framework for this documentation.
-        version: The version string to store in the parsed page.
-    """
+    """Extract markdown content and metadata from a page's HTML."""
     metadata = trafilatura.extract_metadata(html)
     content = trafilatura.extract(
         html,

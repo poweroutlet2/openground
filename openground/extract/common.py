@@ -19,28 +19,22 @@ class ParsedPage(TypedDict):
     content: str
 
 
+def page_path(directory: Path, url: str) -> Path:
+    """Raw-data JSON file for a page URL."""
+    slug = urlparse(url).path.strip("/").replace("/", "-") or "home"
+    return directory / f"{slug}.json"
+
+
 def filter_documentation_files(
     docs_dir: Path, allowed_extensions: set[str] | None = None
 ) -> list[Path]:
-    """
-    Filter to relevant documentation files.
-
-    Args:
-        docs_dir: Directory to search for documentation files
-        allowed_extensions: Set of file extensions to include (e.g., {".md", ".rst"}).
-                          If None, defaults to common documentation formats.
-
-    Returns:
-        List of Path objects for documentation files
-    """
+    """Find doc files (README always, minus LICENSE/CHANGELOG/AUTHORS) under docs_dir."""
     if allowed_extensions is None:
-        # Default to most common doc formats
         allowed_extensions = {".md", ".rst", ".txt", ".mdx", ".ipynb", ".html", ".htm"}
 
     doc_files = []
 
     for root, dirs, files in os.walk(docs_dir):
-        # Skip common non-doc directories
         dirs[:] = [
             d
             for d in dirs
@@ -64,16 +58,13 @@ def filter_documentation_files(
             file_path = Path(root) / file
 
             if file_path.suffix.lower() in allowed_extensions:
-                # Skip hidden files
                 if file.startswith("."):
                     continue
 
-                # Always include README files (regardless of other filtering)
                 if file.upper().startswith("README"):
                     doc_files.append(file_path)
                     continue
 
-                # Skip common non-doc files
                 if file not in {
                     "LICENSE",
                     "CHANGELOG",
@@ -208,7 +199,5 @@ async def save_results(results: list[ParsedPage], output_dir: Path):
     for result in tqdm(
         valid_results, desc="Writing structured raw data files", unit="file"
     ):
-        slug = urlparse(result["url"]).path.strip("/").replace("/", "-") or "home"
-        file_name = output_dir / f"{slug}.json"
-        with open(file_name, "w", encoding="utf-8") as f:
+        with open(page_path(output_dir, result["url"]), "w", encoding="utf-8") as f:
             json.dump(result, f, indent=2)

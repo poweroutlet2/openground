@@ -32,8 +32,8 @@ def get_config_path() -> Path:
     """Path to the optional user config file."""
     if xdg_config := os.environ.get("XDG_CONFIG_HOME"):
         config_dir = Path(xdg_config).expanduser() / "openground"
-    elif os.name == "nt":  # Windows
-        config_dir = Path.home() / "AppData" / "Local" / "openground"
+    elif os.name == "nt":  # Windows: roaming, so it is separate from the data dir
+        config_dir = Path.home() / "AppData" / "Roaming" / "openground"
     else:
         config_dir = Path.home() / ".config" / "openground"
 
@@ -43,6 +43,14 @@ def get_config_path() -> Path:
 def get_sources_path() -> Path:
     """Remembered library sources, stored next to the config file."""
     return get_config_path().parent / "sources.json"
+
+
+def get_db_path() -> Path:
+    return get_data_home() / "lancedb"
+
+
+def get_raw_data_dir() -> Path:
+    return get_data_home() / "raw_data"
 
 
 class Settings(BaseModel):
@@ -64,22 +72,20 @@ class Settings(BaseModel):
     def _check(self) -> "Settings":
         if self.chunk_overlap >= self.chunk_size:
             raise ValueError("chunk_overlap must be smaller than chunk_size")
+        known = MODEL_DIMENSIONS.get(self.embedding_model)
         if not self.embedding_dimensions:
-            if self.embedding_model not in MODEL_DIMENSIONS:
+            if known is None:
                 raise ValueError(
                     f"unknown embedding_model {self.embedding_model!r}: "
                     "set embedding_dimensions too"
                 )
-            self.embedding_dimensions = MODEL_DIMENSIONS[self.embedding_model]
+            self.embedding_dimensions = known
+        elif known and self.embedding_dimensions != known:
+            raise ValueError(
+                f"{self.embedding_model} produces {known}-dimensional vectors, "
+                f"not {self.embedding_dimensions}: remove embedding_dimensions"
+            )
         return self
-
-    @property
-    def db_path(self) -> Path:
-        return get_data_home() / "lancedb"
-
-    @property
-    def raw_data_dir(self) -> Path:
-        return get_data_home() / "raw_data"
 
 
 _settings_cache: Settings | None = None
@@ -126,4 +132,4 @@ def get_settings() -> Settings:
 
 
 def get_library_raw_data_dir(library_name: str, version: str) -> Path:
-    return get_settings().raw_data_dir / library_name.lower() / version
+    return get_raw_data_dir() / library_name.lower() / version

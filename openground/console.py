@@ -27,8 +27,3 @@ def hint(message: str) -> None:
 def warning(message: str) -> None:
     """Print a warning message in yellow."""
     _console.print(message, style="yellow", markup=False)
-
-
-def print(message: str) -> None:
-    """Print a message."""
-    _console.print(message, markup=False)

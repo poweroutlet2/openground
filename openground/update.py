@@ -2,10 +2,9 @@ from typing import TypedDict
 import hashlib
 import json
 from pathlib import Path
-from urllib.parse import urlparse
 from tqdm import tqdm
 
-from openground.extract.common import ParsedPage
+from openground.extract.common import ParsedPage, page_path
 from openground.query import delete_urls
 
 
@@ -96,46 +95,23 @@ def perform_update(
             "Extraction produced no pages. Please check your source configuration."
         )
 
-    # Load existing hashes and compute diff
-    existing_hashes = load_existing_pages_hashes(raw_data_dir)
-    diff = compare_pages(extracted_pages, existing_hashes)
+    diff = compare_pages(extracted_pages, load_existing_pages_hashes(raw_data_dir))
 
-    # Delete LanceDB records for modified and deleted pages
     urls_to_delete = diff["deleted"] + [url for url, _ in diff["modified"]]
-    if urls_to_delete:
-        batch_size = 1000
-        for i in range(0, len(urls_to_delete), batch_size):
-            batch = urls_to_delete[i : i + batch_size]
-            delete_urls(
-                urls=batch,
-                library_name=library_name,
-                version=version,
-            )
+    for i in range(0, len(urls_to_delete), 1000):
+        delete_urls(urls_to_delete[i : i + 1000], library_name, version)
 
-    # Embed and insert new and modified pages
     pages_to_ingest = diff["new"] + [page for _, page in diff["modified"]]
     if pages_to_ingest:
         from openground.ingest import ingest_pages
 
-        ingest_pages(
-            pages=pages_to_ingest,
-        )
+        ingest_pages(pages_to_ingest)
 
-    # Update raw data folder
     raw_data_dir.mkdir(parents=True, exist_ok=True)
-    # Delete JSON files for deleted URLs
     for url in diff["deleted"]:
-        slug = urlparse(url).path.strip("/").replace("/", "-") or "home"
-        file_name = raw_data_dir / f"{slug}.json"
-        if file_name.exists():
-            file_name.unlink()
-
-    # Save new and modified pages
-    pages_to_save = pages_to_ingest
-    for page in tqdm(pages_to_save, desc="Updating raw data files", unit="file"):
-        slug = urlparse(page["url"]).path.strip("/").replace("/", "-") or "home"
-        file_name = raw_data_dir / f"{slug}.json"
-        with open(file_name, "w", encoding="utf-8") as f:
+        page_path(raw_data_dir, url).unlink(missing_ok=True)
+    for page in tqdm(pages_to_ingest, desc="Updating raw data files", unit="file"):
+        with open(page_path(raw_data_dir, page["url"]), "w", encoding="utf-8") as f:
             json.dump(page, f, indent=2)
 
     return UpdateSummary(
