@@ -1,0 +1,325 @@
+"""Add / update / remove flows shared by the CLI and other front ends."""
+
+import asyncio
+import re
+import shutil
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlparse
+
+from openground.config import (
+    get_db_path,
+    get_library_raw_data_dir,
+    get_raw_data_dir,
+)
+from openground.console import UserError
+from openground.extract.common import ParsedPage
+from openground.query import (
+    check_embedding_config,
+    delete_library,
+    library_version_exists,
+    list_libraries_with_versions,
+)
+from openground.sources import (
+    LibrarySource,
+    load_sources,
+    remove_source,
+    save_source,
+    source_location,
+)
+from openground.stats import get_stats_path
+from openground.update import UpdateSummary
+
+GIT_HOSTS = {"github.com", "www.github.com", "gitlab.com", "www.gitlab.com"}
+PATH_PREFIXES = ("/", "~", "./", "../", ".\\", "..\\", "\\")
+
+
+class ServiceError(UserError):
+    pass
+
+
+@dataclass
+class SyncResult:
+    library: str
+    version: str
+    pages: int = 0
+    summary: UpdateSummary | None = None  # None means the version was newly added
+    error: str | None = None
+
+
+def _expand(source: str) -> Path:
+    try:
+        return Path(source).expanduser()
+    except RuntimeError as e:
+        raise ServiceError(f"Could not resolve path '{source}': {e}") from None
+
+
+def _same_source(a: LibrarySource, b: LibrarySource) -> bool:
+    def key(spec: LibrarySource) -> tuple[str, str]:
+        return spec["type"], source_location(spec).rstrip("/").removesuffix(".git")
+
+    return key(a) == key(b)
+
+
+def detect_source_type(source: str) -> str:
+    if _expand(source).exists():
+        return "local_path"
+
+    parsed = urlparse(source)
+    if (
+        parsed.hostname in GIT_HOSTS
+        or parsed.scheme in ("git", "ssh")
+        or source.startswith("git@")
+        or source.endswith(".git")
+    ):
+        return "git_repo"
+    if parsed.scheme in ("http", "https"):
+        return "sitemap"
+    if source.startswith(PATH_PREFIXES) or re.match(r"^[A-Za-z]:[\\/]", source):
+        return "local_path"
+
+    raise ServiceError(
+        f"Could not tell what '{source}' is. Use a git repo URL, a sitemap URL, "
+        "or a path to a local directory."
+    )
+
+
+def parse_source(source: str) -> tuple[LibrarySource, str | None]:
+    """Normalize SOURCE into a LibrarySource plus a git ref implied by a web URL."""
+    source_type = detect_source_type(source)
+
+    if source_type == "git_repo":
+        from openground.extract.git import parse_git_web_url
+
+        repo_url, ref, docs_path = parse_git_web_url(source)
+        spec: LibrarySource = {"type": "git_repo", "repo_url": repo_url}
+        if docs_path:
+            spec["docs_paths"] = [docs_path]
+        return spec, ref
+    if source_type == "sitemap":
+        return {"type": "sitemap", "sitemap_url": source}, None
+    path = _expand(source).resolve()
+    if not path.is_dir():
+        raise ServiceError(f"Not a directory: {path}")
+    return {"type": "local_path", "local_path": str(path)}, None
+
+
+def _apply_options(
+    spec: LibrarySource,
+    version: str | None,
+    docs_paths: list[str] | None,
+    filter_keywords: list[str] | None,
+) -> str:
+    """Merge CLI options into the source spec, rejecting ones that don't apply."""
+    kind = spec["type"]
+    for given, flag, valid_for in (
+        (version and version != "latest", "--version", "git_repo"),
+        (docs_paths, "--docs-path", "git_repo"),
+        (filter_keywords, "--filter", "sitemap"),
+    ):
+        if given and kind != valid_for:
+            raise ServiceError(
+                f"{flag} only applies to {valid_for.replace('_repo', '')} sources, "
+                f"not {kind.replace('_repo', '').replace('_', ' ')} sources."
+            )
+    if docs_paths:
+        spec["docs_paths"] = docs_paths
+    if filter_keywords:
+        spec["filter_keywords"] = filter_keywords
+    return version or "latest"
+
+
+def _canonical_ref(spec: LibrarySource, version: str) -> str:
+    """Resolve a git version to the real tag/branch name (e.g. 1.0 -> v1.0)."""
+    if spec["type"] != "git_repo" or version == "latest":
+        return version
+    from openground.extract.git import resolve_remote_ref
+
+    if (ref := resolve_remote_ref(spec["repo_url"], version)) is None:
+        raise ServiceError(
+            f"Tag or branch '{version}' not found in {spec['repo_url']}."
+        )
+    return ref
+
+
+async def _extract(spec: LibrarySource, library: str, version: str, out_dir: Path):
+    source_type = spec["type"]
+    if source_type == "git_repo":
+        from openground.extract.git import extract_repo
+
+        await extract_repo(
+            repo_url=spec["repo_url"],
+            docs_paths=spec.get("docs_paths", []),
+            output_dir=out_dir,
+            library_name=library,
+            version=version,
+        )
+    elif source_type == "sitemap":
+        from openground.extract.sitemap import extract_pages
+
+        await extract_pages(
+            sitemap_url=spec["sitemap_url"],
+            library_name=library,
+            output_dir=out_dir,
+            filter_keywords=spec.get("filter_keywords", []),
+            version=version,
+        )
+    else:
+        from openground.extract.local_path import extract_local_path
+
+        await extract_local_path(
+            local_path=Path(spec["local_path"]),
+            output_dir=out_dir,
+            library_name=library,
+            version=version,
+        )
+
+
+def _extract_pages(
+    spec: LibrarySource, library: str, version: str, out_dir: Path
+) -> list[ParsedPage]:
+    from openground.ingest import load_parsed_pages
+
+    asyncio.run(_extract(spec, library, version, out_dir))
+    pages = load_parsed_pages(out_dir) if out_dir.exists() else []
+    if not pages:
+        raise ServiceError(
+            f"Extraction produced no pages for '{library}'. Check the source."
+        )
+    return pages
+
+
+def _sync(library: str, version: str, spec: LibrarySource) -> SyncResult:
+    """Ingest a library version, or incrementally update it if already stored."""
+    from openground.ingest import ingest_pages
+    from openground.update import perform_update
+
+    check_embedding_config()
+    raw_dir = get_library_raw_data_dir(library, version)
+    stored = library_version_exists(library, version) and any(raw_dir.glob("*.json"))
+
+    if stored:
+        with tempfile.TemporaryDirectory() as tmp:
+            pages = _extract_pages(spec, library, version, Path(tmp))
+            summary = perform_update(pages, library, version, raw_dir)
+        return SyncResult(library, version, len(pages), summary)
+
+    # Drop leftovers from a half-finished earlier run so nothing is duplicated
+    delete_library(library, version)
+    shutil.rmtree(raw_dir, ignore_errors=True)
+    try:
+        pages = _extract_pages(spec, library, version, raw_dir)
+        ingest_pages(pages)
+    except Exception:
+        shutil.rmtree(raw_dir, ignore_errors=True)
+        raise
+    return SyncResult(library, version, len(pages))
+
+
+def add_library(
+    name: str,
+    source: str | None = None,
+    version: str | None = None,
+    docs_paths: list[str] | None = None,
+    filter_keywords: list[str] | None = None,
+) -> SyncResult:
+    """Extract and embed a library, then remember its source."""
+    remembered = load_sources().get(name)  # also validates the file before any work
+    stored = list_libraries_with_versions().get(name, [])
+
+    if source:
+        spec, ref = parse_source(source)
+        if remembered and stored and not _same_source(remembered, spec):
+            raise ServiceError(
+                f"'{name}' already uses {source_location(remembered)}. "
+                f"Remove it with `openground rm {name}` or pick another name."
+            )
+        version = version or ref
+    elif remembered:
+        spec = remembered
+        if not version and stored and "latest" not in stored:
+            raise ServiceError(
+                f"'{name}' is already stored ({', '.join(stored)}). Use "
+                f"`openground update {name}` to refresh it, or pass -v to add another version."
+            )
+    else:
+        raise ServiceError(
+            f"No remembered source for '{name}'. Run: openground add {name} SOURCE"
+        )
+
+    version = _canonical_ref(
+        spec, _apply_options(spec, version, docs_paths, filter_keywords)
+    )
+    result = _sync(name, version, spec)
+    save_source(name, spec)
+    return result
+
+
+def update_libraries(name: str | None = None) -> list[SyncResult]:
+    """Refresh every stored version from the remembered source (one library, or all)."""
+    sources = load_sources()
+    stored = list_libraries_with_versions()
+
+    if name:
+        if name not in stored:
+            raise ServiceError(f"Library '{name}' not found.")
+        if name not in sources:
+            raise ServiceError(
+                f"No remembered source for '{name}'. Run: openground add {name} SOURCE"
+            )
+        targets = {name: stored[name]}
+    else:
+        targets = {lib: v for lib, v in stored.items() if lib in sources}
+
+    results = []
+    for library, versions in targets.items():
+        for version in versions:
+            try:
+                results.append(_sync(library, version, sources[library]))
+            except Exception as e:
+                results.append(SyncResult(library, version, error=str(e)))
+    return results
+
+
+def resolve_version(name: str, version: str | None = None) -> str:
+    versions = list_libraries_with_versions().get(name)
+    if not versions:
+        raise ServiceError(f"Library '{name}' not found.")
+    if version is None:
+        if len(versions) > 1:
+            raise ServiceError(
+                f"'{name}' has multiple versions: {', '.join(versions)}. "
+                "Pick one with --version."
+            )
+        return versions[0]
+    if version not in versions:
+        raise ServiceError(
+            f"Version '{version}' of '{name}' not found. Stored: {', '.join(versions)}."
+        )
+    return version
+
+
+def remove_library(name: str, version: str) -> int:
+    """Delete a stored version (rows and raw files); forget the source with the last one."""
+    deleted = delete_library(name, version)
+    shutil.rmtree(get_library_raw_data_dir(name, version), ignore_errors=True)
+    if name not in list_libraries_with_versions():
+        remove_source(name)
+    return deleted
+
+
+def list_libraries() -> list[tuple[str, list[str], bool]]:
+    """(name, versions, has remembered source) for each stored library."""
+    sources = load_sources()
+    return [
+        (name, versions, name in sources)
+        for name, versions in list_libraries_with_versions().items()
+    ]
+
+
+def reset_data() -> None:
+    """Delete embeddings, raw files and stats (never config or sources)."""
+    shutil.rmtree(get_db_path(), ignore_errors=True)
+    shutil.rmtree(get_raw_data_dir(), ignore_errors=True)
+    get_stats_path().unlink(missing_ok=True)

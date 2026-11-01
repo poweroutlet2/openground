@@ -12,7 +12,7 @@ from openground.extract.common import (
     filter_documentation_files,
     process_documentation_files,
 )
-from openground.console import error
+from openground.console import UserError
 
 
 async def extract_local_path(
@@ -21,32 +21,15 @@ async def extract_local_path(
     library_name: str,
     version: str,
 ) -> None:
-    """
-    Extract documentation files from a local directory path.
-
-    Args:
-        local_path: Path to the local directory containing documentation files
-        output_dir: Directory to save the processed JSON files
-        library_name: Name of the library
-        version: Version string (e.g., "local-2025-02-02")
-    """
-    # Expand and resolve the path
+    """Extract documentation files from a local directory."""
     local_path = local_path.expanduser().resolve()
-
-    if not local_path.exists():
-        error(f"Path does not exist: {local_path}")
-        return
-
     if not local_path.is_dir():
-        error(f"Path is not a directory: {local_path}")
-        return
+        raise UserError(f"Not a directory: {local_path}")
 
-    # Get all documentation files
     doc_files = filter_documentation_files(local_path)
 
     if not doc_files:
-        error(f"No documentation files found in {local_path}")
-        return
+        raise UserError(f"No documentation files found in {local_path}")
 
     print(f"Processing {len(doc_files)} files...")
 
@@ -63,8 +46,7 @@ async def extract_local_path(
     )
 
     if not results:
-        error("No documentation files found after processing.")
-        return
+        raise UserError("No documentation files found after processing.")
 
     print(f"Found {len(results)} valid documentation pages. Saving...")
     await save_results(results, output_dir)

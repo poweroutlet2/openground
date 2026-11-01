@@ -38,185 +38,93 @@ openground is an on-device RAG system that extracts documentation from git repos
 
 ## Quick Start
 
-### Installation
-
-Recommended to install with [uv](https://docs.astral.sh/uv/):
+### Install
 
 ```bash
-uv tool install openground # Larger package size, automatic GPU/MPS/CPU support
-uv tool install 'openground[fastembed]' # Lightweight CPU support
-uv tool install 'openground[fastembed-gpu]' # Experimental CUDA/GPU support through fastembed
+uv tool install openground                    # sentence-transformers (GPU/MPS/CPU)
+uv tool install 'openground[fastembed-cpu]'   # also installs fastembed (or fastembed-gpu)
 ```
 
-or
+fastembed is optional; select it with `"embedding_backend": "fastembed"` in the config file below.
+
+or `pip install openground`.
+
+### Add documentation
+
+`openground add NAME SOURCE` figures out the source type from `SOURCE`:
 
 ```bash
-pip install openground
+# git repo (optionally a docs folder and a tag/branch)
+openground add fastembed https://github.com/qdrant/fastembed.git -d docs -v v0.7.4
+
+# sitemap (optionally only URLs containing a keyword)
+openground add claude-code https://code.claude.com/docs/sitemap.xml -f /en/
+
+# local directory
+openground add my-docs ./docs
 ```
 
-### Add Documentation
+Git and local sources index `.md`, `.rst`, `.txt`, `.mdx`, `.ipynb`, `.html` and `.htm` files. GitHub/GitLab web URLs like `https://github.com/o/r/tree/v1.0/docs` also work; the tag and folder are picked up from the URL.
 
-Openground can source documentation from git repos, sitemaps, or local directories.
+`add` adds; `update` refreshes. Each library has one source, remembered in `sources.json` next to the config file, and `openground update` re-extracts every stored version of every library from it (`update NAME` for one), re-embedding only pages that changed. Use `add NAME -v VERSION` to add another version from the same source. `add NAME SOURCE` with a different source than the one a stored library uses is an error: `rm` the library or pick another name. Adding a name and version that is already stored updates it in place.
 
-To add documentation from a git repo to openground, run:
+### Commands
+
+| Command | |
+|---|---|
+| `add NAME [SOURCE]` | Add a library or another version of it (an existing name+version is updated in place). Without `SOURCE`, reuses the remembered one; without `-v` it will not create a second default version, use `update`. Options (each only valid for its source type): `-d/--docs-path` (git, repeatable), `-v/--version` (git tag or branch), `-f/--filter` (sitemap, repeatable) |
+| `update [NAME]` | Refresh libraries from their remembered sources (all if no name) |
+| `ls` | List libraries, versions, and whether a source is remembered |
+| `rm NAME` | Delete a library version; the remembered source is forgotten once the last version is gone. `-v` is only needed when several versions are stored. `-y` skips the prompt |
+| `search QUERY` | Hybrid search from the terminal. Options: `-l`, `-v`, `-k` |
+| `serve` | Run the MCP server on stdio (same as `openground-mcp`) |
+| `install-mcp [CLIENT]` | Configure `claude-code`, `cursor` or `opencode`; no client prints the JSON. `--wsl` launches the server through `wsl.exe` |
+| `config` | Show the config file path, effective settings and data locations |
+| `stats` | Library and chunk counts plus MCP tool call counts. `--reset` zeroes the call counts |
+| `reset` | Delete embeddings, raw files and stats; config and remembered sources are kept. `-y` skips the prompt |
+
+### Use with AI agents
 
 ```bash
-openground add library-name \
-  --source https://github.com/example/example.git \
-  --docs-path docs/ \
-  --version v1.0.0 \ # gets v1.0.0 docs using git tags
-  -y
+openground install-mcp claude-code   # or cursor, opencode
+openground install-mcp               # print JSON for any other client
 ```
 
-The `--version` flag specifies a git tag to checkout (defaults to latest).
+Then ask your agent something like "What models are available in fastembed?" and it will search your local docs.
 
-To add documentation from a sitemap to openground:
+## Configuration
 
-```bash
-openground add library-name \
-  --source https://docs.example.com/sitemap.xml \
-  --filter-keyword docs \ 
-  --filter-keyword blog \
-  -y
-```
-
-To add documentation from a local path to openground:
-
-```bash
-# Absolute path
-openground add library-name --source /path/to/docs -y
-
-# Home directory
-openground add library-name --source ~/path/to/docs -y
-
-# Relative path (from current directory)
-openground add library-name --source ./docs -y
-openground add library-name --source ../docs -y
-openground add library-name --source docs -y
-```
-
- Git and local directory additions support `.md`, `.rst`, `.txt`, `.mdx`, `.ipynb`, `.html`, and `.htm` files.
-
-This will download the docs, embed them, and store them into lancedb. All locally.
-
-Multiple versions of the same library can be stored and queried independently.
-
-### Sources Files
-
-Openground uses `sources.json` files to store library source configurations. When you add documentation with `--source`, openground remembers the source URL so you can add/update the same library later by just specifying its name.
-
-#### How Sources Files Work
-
-There are two types of sources files:
-
-1. **User Sources File** (`~/.openground/sources.json`)
-   - Shared across all your projects
-   - Created automatically when you first use `--source` flag
-   - This is where new sources are saved by default
-
-2. **Project Sources File** (`.openground/sources.json`)
-   - Project-specific overrides
-   - Created automatically in each project when you add a source
-   - Takes priority over user sources when both exist
-
-#### Priority Order
-
-When looking up a library by name, openground checks:
-1. Custom path via `--sources-file` flag
-2. Project-local `.openground/sources.json` (if exists)
-3. User `~/.openground/sources.json` (if exists)
-4. Package-level bundled sources
-
-#### Example Workflow
-
-```bash
-# In project1: Add library with source
-cd project1/
-openground add fastapi --source https://github.com/tiangolo/fastapi.git --docs-path docs/
-
-# In project2: Same library is now available by name!
-cd ../project2/
-openground add fastapi  # Finds source from ~/.openground/sources.json
-
-# Project-specific override: Add a different version for this project
-echo '{"fastapi": {"type": "git_repo", "repo_url": "https://github.com/tiangolo/fastapi.git", "docs_paths": ["docs"], "languages": ["python"]}}' > .openground/sources.json
-```
-
-#### Managing Sources
-
-Sources are stored as JSON with this structure:
+Defaults work out of the box. To change them, create `config.json` in the config directory: `$XDG_CONFIG_HOME/openground` if set, otherwise `~/.config/openground` (Linux/macOS) or `%USERPROFILE%\AppData\Roaming\openground` (Windows). Every key is optional:
 
 ```json
 {
-  "fastapi": {
-    "type": "git_repo",
-    "repo_url": "https://github.com/tiangolo/fastapi",
-    "docs_paths": ["docs"],
-  },
-  "numpy": {
-    "type": "sitemap",
-    "sitemap_url": "https://numpy.org/doc/sitemap.xml",
-    "filter_keywords": ["docs/"]
-  }
+  "embedding_backend": "sentence-transformers",
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "embedding_dimensions": 384,
+  "batch_size": 32,
+  "chunk_size": 800,
+  "chunk_overlap": 200,
+  "top_k": 5
 }
 ```
 
-To disable automatic source saving:
+`embedding_backend` is `sentence-transformers` or `fastembed`. `embedding_dimensions` can be omitted (or `0`) for the common bge and MiniLM models, where it is filled in automatically and a different value is rejected; set it yourself for any other model. Unknown keys are rejected, `chunk_size`, `batch_size` and `top_k` must be positive, and `chunk_overlap` (may be `0`) must be smaller than `chunk_size`. Delete the file to reset.
 
-```bash
-openground config set sources.auto_add_local false
-```
+The database remembers the backend and model its embeddings were made with, and openground uses them automatically unless `config.json` sets `embedding_backend` or `embedding_model`. If those explicitly disagree with the stored ones, `add` and `search` refuse to run until you remove them or run `openground reset` and re-add your libraries. Data lives in `$XDG_DATA_HOME/openground` or `~/.local/share/openground` (`%USERPROFILE%\AppData\Local\openground` on Windows); run `openground config` to see all paths.
 
-### Use with AI Agents
+## Upgrading from 0.14
 
-To install the MCP server:
+Your existing setup is migrated automatically, with a notice, the first time openground needs it:
 
-```bash
-# For Cursor
-openground install-mcp --cursor
-
-# For Claude Code
-openground install-mcp --claude-code
-
-# For OpenCode
-openground install-mcp --opencode
-
-# For any other agent
-openground install-mcp
-```
-
-Now your AI assistant can search your stored documentation automatically!
-
-## Example Workflow
-
-Here's how to add the fastembed documentation and make it available to Claude Code:
-
-```bash
-# 1. Install openground
-uv tool install openground
-
-# 2. Add fastembed to openground
-openground add fastembed --source https://github.com/qdrant/fastembed.git --docs-path docs/ --version v0.7.4 -y
-
-# 3. Configure Claude Code to use openground MCP
-openground install-mcp --claude-code
-
-# 4. Restart Claude Code
-# Now you can ask: "What models are available in fastembed?"
-# Claude will search the fastembed docs automatically!
-```
+- **Config** is rewritten in the flat format; the old file is kept as `config.json.bak`. `db_path`, `raw_data_dir` and `table_name` are no longer settings (you get a notice if you had customized a path). On Windows the config moves from `Local` to `Roaming` AppData.
+- **Remembered sources** from `~/.openground/sources.json` are imported into the new `sources.json`. Project-level `.openground/sources.json`, `--sources-file` and the bundled catalog are gone.
+- **Existing embeddings keep working.** The default backend for new databases is now `sentence-transformers`, but an existing database keeps using the backend and model it was built with.
+- **Commands changed.** `extract-*`, `embed`, `query`, `list-libraries`, `remove`, `nuke`, `config set|get|show|reset` and `stats show|clear` are replaced by the commands above. Local directories are now stored under the version `latest`.
 
 ## Claude Code Agent
 
 Openground includes a custom Claude Code agent that searches official documentation without polluting your main conversation context. See [docs/claude-code-agent.md](docs/claude-code-agent.md) for installation and usage instructions.
 
-## MCP Usage Statistics
-To see how many times each tool in the MCP server has been called:
-
-```bash
-openground stats show # show stats
-openground stats clear # reset stats
-```
 ## Development
 
 To contribute or work on openground locally:

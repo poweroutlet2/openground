@@ -28,8 +28,8 @@ The philosophy mandates simplicity of implementation for maintainers and ease of
 
 Openground is a RAG pipeline tool with CLI and MCP server components.
 
--   **Main modules**: `cli.py`, `config.py`, `ingest.py`, `query.py`, `server.py`, `embeddings.py`, `console.py`
--   **extract/ subdirectory**: `git.py`, `source.py`, `common.py`, `sitemap.py`
+-   **Main modules**: `cli.py` (arg parsing/output only), `service.py` (add/update/remove flows), `config.py`, `sources.py`, `install.py`, `ingest.py`, `query.py`, `update.py`, `stats.py`, `server.py`, `embeddings.py`, `console.py`
+-   **extract/ subdirectory**: `git.py`, `local_path.py`, `common.py`, `sitemap.py`
 -   **Configuration**: Managed via JSON config file (see `config.py`)
 -   **Pipeline**: extract → embed → query (hybrid semantic + BM25 search in lancedb)
 
@@ -56,5 +56,5 @@ Primary commands (see `cli.py` for complete list):
 
 -   `openground add` - Extract and ingest documentation from a source
 -   `openground install-mcp` - Install MCP server configuration
--   `openground config` - Manage configuration (show, set, get, reset)
--   `openground nuke` - Delete all data (raw_data and/or embeddings)
+-   `openground config` - Show settings and data locations
+-   `openground reset` - Delete all local data

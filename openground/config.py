@@ -1,230 +1,169 @@
-# Shared defaults for CLI command
-
 import json
 import os
-import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Literal
+
+from openground.console import UserError, warning
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+TABLE_NAME = "documents"
+
+# Known embedding models and their vector dimensions. Used to size the LanceDB schema.
+MODEL_DIMENSIONS = {
+    "BAAI/bge-small-en-v1.5": 384,
+    "BAAI/bge-base-en-v1.5": 768,
+    "BAAI/bge-large-en-v1.5": 1024,
+    "BAAI/bge-m3": 1024,
+    "sentence-transformers/all-MiniLM-L6-v2": 384,
+}
 
 
 def get_data_home() -> Path:
-    """Get the base directory for openground data.
-
-    Uses XDG_DATA_HOME if set, otherwise defaults to ~/.local/share/openground
-    on Linux/macOS or ~/AppData/Local/openground on Windows.
-    """
+    """Base directory for openground data (db, raw files, stats)."""
     if xdg_data := os.environ.get("XDG_DATA_HOME"):
         return Path(xdg_data).expanduser() / "openground"
 
-    # Platform-specific defaults
     if os.name == "nt":  # Windows
         return Path.home() / "AppData" / "Local" / "openground"
-    else:  # Linux, macOS, etc.
-        return Path.home() / ".local" / "share" / "openground"
-
-
-DEFAULT_LIBRARY_NAME = "openground_docs"
-
-# Extraction defaults
-SITEMAP_URL = "https://docs.openground.ai/sitemap.xml"
-CONCURRENCY_LIMIT = 50
-
-
-DEFAULT_RAW_DATA_DIR_BASE = get_data_home() / "raw_data"
-# User's personal sources file (shared across all projects)
-USER_SOURCE_FILE = Path.home() / ".openground" / "sources.json"
-# Project-local sources file (for project-specific overrides)
-PROJECT_SOURCE_FILE = Path(".openground") / "sources.json"
-
-
-def get_library_raw_data_dir(library_name: str, version: str) -> Path:
-    """Construct the path to the raw data directory for a given library name and version.
-
-    Args:
-        library_name: Name of the library.
-        version: Version string.
-
-    Returns:
-        Path to the raw data directory.
-    """
-    config = get_effective_config()
-    raw_data_dir_base = Path(config.get("raw_data_dir", str(DEFAULT_RAW_DATA_DIR_BASE)))
-    return raw_data_dir_base / library_name.lower() / version
-
-
-# Embeddings / query defaults
-DEFAULT_DB_PATH = get_data_home() / "lancedb"
-DEFAULT_TABLE_NAME = "documents"
-DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-DEFAULT_LIBRARY_VERSION = "latest"
-DEFAULT_EMBEDDING_DIMENSIONS = 384
-# fastembed or sentence-transformers
-DEFAULT_EMBEDDING_BACKEND = "fastembed"
-
-# Default values for embeddings parameters
-DEFAULT_BATCH_SIZE = 32
-DEFAULT_CHUNK_SIZE = 800
-DEFAULT_CHUNK_OVERLAP = 200
-# Default values for query parameters
-DEFAULT_TOP_K = 5
+    return Path.home() / ".local" / "share" / "openground"
 
 
 def get_config_path() -> Path:
-    """Get the path to the user's config file.
-
-    Uses XDG_CONFIG_HOME if set, otherwise defaults to ~/.config/openground
-    on Linux/macOS or ~/AppData/Local/openground on Windows.
-    """
+    """Path to the optional user config file."""
     if xdg_config := os.environ.get("XDG_CONFIG_HOME"):
         config_dir = Path(xdg_config).expanduser() / "openground"
-    elif os.name == "nt":  # Windows
-        config_dir = Path.home() / "AppData" / "Local" / "openground"
-    else:  # Linux, macOS, etc.
+    elif os.name == "nt":  # Windows: roaming, so it is separate from the data dir
+        config_dir = Path.home() / "AppData" / "Roaming" / "openground"
+    else:
         config_dir = Path.home() / ".config" / "openground"
 
     return config_dir / "config.json"
 
 
-# Cache for loaded config
-_config_cache: dict[str, Any] | None = None
+def get_sources_path() -> Path:
+    """Remembered library sources, stored next to the config file."""
+    return get_config_path().parent / "sources.json"
 
 
-def load_config() -> dict[str, Any]:
-    """Load configuration from the config file.
+def get_db_path() -> Path:
+    return get_data_home() / "lancedb"
 
-    Returns empty dict if file doesn't exist.
-    Raises ValueError if file contains invalid JSON.
-    """
-    config_path = get_config_path()
 
-    if not config_path.exists():
-        return {}
+def get_raw_data_dir() -> Path:
+    return get_data_home() / "raw_data"
 
+
+class Settings(BaseModel):
+    """User-tunable settings. Stored as flat JSON at get_config_path()."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    embedding_backend: Literal["fastembed", "sentence-transformers"] = (
+        "sentence-transformers"
+    )
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_dimensions: int = Field(0, ge=0)
+    batch_size: int = Field(32, gt=0)
+    chunk_size: int = Field(800, gt=0)
+    chunk_overlap: int = Field(200, ge=0)
+    top_k: int = Field(5, gt=0)
+
+    @model_validator(mode="after")
+    def _check(self) -> "Settings":
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size")
+        known = MODEL_DIMENSIONS.get(self.embedding_model)
+        if not self.embedding_dimensions:
+            if known is None:
+                raise ValueError(
+                    f"unknown embedding_model {self.embedding_model!r}: "
+                    "set embedding_dimensions too"
+                )
+            self.embedding_dimensions = known
+        elif known and self.embedding_dimensions != known:
+            raise ValueError(
+                f"{self.embedding_model} produces {known}-dimensional vectors, "
+                f"not {self.embedding_dimensions}: remove embedding_dimensions"
+            )
+        return self
+
+
+_settings_cache: Settings | None = None
+LEGACY_SECTIONS = {"embeddings", "query", "extraction", "sources", "ingestion"}
+LEGACY_TOP_LEVEL = {"db_path", "table_name", "raw_data_dir"}
+
+
+def _flatten_legacy(data: dict) -> dict:
+    """Map a pre-0.15 nested config onto the flat keys, keeping only non-default values."""
+    flat = {}
+    for section in ("embeddings", "query"):
+        if isinstance(data.get(section), dict):
+            flat.update(data[section])
+    flat = {k: v for k, v in flat.items() if k in Settings.model_fields}
+    if (
+        flat.get("embedding_model", Settings.model_fields["embedding_model"].default)
+        in MODEL_DIMENSIONS
+    ):
+        flat.pop("embedding_dimensions", None)
+    return {k: v for k, v in flat.items() if v != Settings.model_fields[k].default}
+
+
+def _migrate_legacy_config(path: Path) -> None:
+    """Rewrite a pre-0.15 config file in the flat format, keeping a .bak copy."""
+    source = path
+    if not path.exists() and os.name == "nt":
+        source = get_data_home() / "config.json"  # pre-0.15 Windows location
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if not content:
-                return {}
-            return json.loads(content)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in config file {config_path}: {e}") from e
-    except Exception as e:
-        raise ValueError(f"Error reading config file {config_path}: {e}") from e
+        data = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict) or not (
+        LEGACY_SECTIONS & set(data) or LEGACY_TOP_LEVEL & set(data)
+    ):
+        return
+
+    backup = source.with_name("config.json.bak")
+    backup.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(_flatten_legacy(data), indent=2), encoding="utf-8")
+    if source != path:
+        source.unlink()
+    warning(f"Migrated config to the new flat format: {path} (old file: {backup})")
+    current = {"db_path": get_db_path(), "raw_data_dir": get_raw_data_dir()}
+    moved = [
+        k
+        for k, p in current.items()
+        if k in data and Path(str(data[k])).expanduser() != p
+    ]
+    if moved:
+        warning(
+            f"  {', '.join(moved)} are no longer settings; openground now uses {get_data_home()}"
+        )
 
 
-def save_config(config: dict[str, Any]) -> None:
-    """Save configuration to the config file atomically.
-
-    Creates the config directory if it doesn't exist.
-    """
-    config_path = get_config_path()
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write atomically: write to temp file, then rename
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=config_path.parent,
-            delete=False,
-            suffix=".tmp",
-        ) as tmp_file:
-            json.dump(config, tmp_file, indent=2, ensure_ascii=False)
-            tmp_path = Path(tmp_file.name)
-
-        # Atomic rename
-        tmp_path.replace(config_path)
-    except Exception:
-        if tmp_path and tmp_path.exists():
-            tmp_path.unlink()
-        raise
-
-
-def get_default_config() -> dict[str, Any]:
-    """Get the default configuration dictionary."""
-    return {
-        "db_path": str(DEFAULT_DB_PATH),
-        "table_name": DEFAULT_TABLE_NAME,
-        "raw_data_dir": str(DEFAULT_RAW_DATA_DIR_BASE),
-        "extraction": {
-            "concurrency_limit": CONCURRENCY_LIMIT,
-        },
-        "embeddings": {
-            "batch_size": DEFAULT_BATCH_SIZE,
-            "chunk_size": DEFAULT_CHUNK_SIZE,
-            "chunk_overlap": DEFAULT_CHUNK_OVERLAP,
-            "embedding_model": DEFAULT_EMBEDDING_MODEL,
-            "embedding_dimensions": DEFAULT_EMBEDDING_DIMENSIONS,
-            "embedding_backend": DEFAULT_EMBEDDING_BACKEND,
-        },
-        "query": {
-            "top_k": DEFAULT_TOP_K,
-        },
-        "sources": {
-            "auto_add_local": True,
-        },
-    }
-
-
-def _merge_with_defaults(user_config: dict[str, Any]) -> dict[str, Any]:
-    """Merge user config with hardcoded defaults."""
-    # Start with defaults
-    merged = get_default_config()
-
-    # Override with user config
-    if "db_path" in user_config:
-        merged["db_path"] = user_config["db_path"]
-    if "table_name" in user_config:
-        merged["table_name"] = user_config["table_name"]
-    if "raw_data_dir" in user_config:
-        merged["raw_data_dir"] = user_config["raw_data_dir"]
-
-    if "extraction" in user_config:
-        if not isinstance(user_config["extraction"], dict):
-            raise ValueError(
-                "Config key 'extraction' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
+def get_settings() -> Settings:
+    """Load settings from the config file (cached for the process)."""
+    global _settings_cache
+    if _settings_cache is None:
+        path = get_config_path()
+        _migrate_legacy_config(path)
+        try:
+            text = path.read_text(encoding="utf-8").strip() if path.exists() else ""
+            _settings_cache = Settings.model_validate(json.loads(text) if text else {})
+            return _settings_cache
+        except json.JSONDecodeError as e:
+            problem = f"invalid JSON ({e})"
+        except ValidationError as e:
+            problem = "; ".join(
+                f"{'.'.join(map(str, err['loc'])) or 'config'}: {err['msg']}"
+                for err in e.errors()
             )
-        merged["extraction"].update(user_config["extraction"])
-    if "embeddings" in user_config:
-        if not isinstance(user_config["embeddings"], dict):
-            raise ValueError(
-                "Config key 'embeddings' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
-            )
-        merged["embeddings"].update(user_config["embeddings"])
-    if "query" in user_config:
-        if not isinstance(user_config["query"], dict):
-            raise ValueError(
-                "Config key 'query' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
-            )
-        merged["query"].update(user_config["query"])
-
-    if "sources" in user_config:
-        if not isinstance(user_config["sources"], dict):
-            raise ValueError(
-                "Config key 'sources' must be an object. Hint: If you need to reset the default config, run `openground config reset`."
-            )
-        merged["sources"].update(user_config["sources"])
-
-    return merged
+        raise UserError(
+            f"Invalid config file {path}: {problem}\n"
+            "Fix it or delete the file to reset to defaults."
+        )
+    return _settings_cache
 
 
-def get_effective_config() -> dict[str, Any]:
-    """Get the effective configuration (user config merged with defaults).
-
-    Returns merged config (user config overrides defaults).
-    Does not create the config file if it doesn't exist - use ensure_config_exists()
-    or create it explicitly before calling this function.
-    Caches the result for the duration of the process.
-    """
-    global _config_cache
-    if _config_cache is None:
-        user_config = load_config()
-        _config_cache = _merge_with_defaults(user_config)
-    return _config_cache
-
-
-def clear_config_cache() -> None:
-    """Clear the config cache. Used after config modifications."""
-    global _config_cache
-    _config_cache = None
+def get_library_raw_data_dir(library_name: str, version: str) -> Path:
+    return get_raw_data_dir() / library_name.lower() / version

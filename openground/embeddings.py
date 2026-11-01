@@ -7,7 +7,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from tqdm import tqdm
 
-from openground.config import get_effective_config
+from openground.config import get_settings
 from openground.console import error, hint, warning
 
 
@@ -18,8 +18,8 @@ def get_st_model(model_name: str):
         from sentence_transformers import SentenceTransformer
     except ImportError:
         raise ImportError(
-            "The 'sentence-transformers' backend is not installed. "
-            "Please install it with: pip install 'openground[sentence-transformers]'"
+            "sentence-transformers is not installed (it is a base dependency of "
+            "openground): reinstall openground."
         ) from None
 
     return SentenceTransformer(model_name)
@@ -71,7 +71,7 @@ def check_gpu_compatibility() -> None:
             "\nWarning: openground[fastembed-gpu] is installed but no NVIDIA GPU was detected."
         )
         warning("   You may want to switch to the CPU version:")
-        warning("   uv tool install 'openground[fastembed]'\n")
+        warning("   uv tool install 'openground[fastembed-cpu]'\n")
 
     elif gpu_hardware and has_gpu_pkg and not functional_gpu:
         error(
@@ -83,10 +83,12 @@ def check_gpu_compatibility() -> None:
         error(
             "   See: https://oliviajain.github.io/onnxruntime/docs/execution-providers/CUDA-ExecutionProvider.html\n"
         )
-        error("  2. Install the CPU version: uv tool install 'openground[fastembed]'")
         error(
-            "  3. If you still want gpu performance, you can install the more bulky"
-            "sentence-transformers backend: uv tool install 'openground[sentence-transformers]'"
+            "  2. Install the CPU version: uv tool install 'openground[fastembed-cpu]'"
+        )
+        error(
+            "  3. Or use the sentence-transformers backend (installed by default): "
+            'set "embedding_backend": "sentence-transformers" in config.json.'
         )
 
 
@@ -120,18 +122,10 @@ def _generate_embeddings_sentence_transformers(
     texts: Iterable[str],
     show_progress: bool = True,
 ) -> list[list[float]]:
-    """Generate embeddings using sentence-transformers backend.
-
-    Args:
-        texts: Iterable of text strings to embed.
-        show_progress: Whether to show a progress bar.
-
-    Returns:
-        List of embedding vectors (each as a list of floats).
-    """
-    config = get_effective_config()
-    batch_size = config["embeddings"]["batch_size"]
-    model_name = config["embeddings"]["embedding_model"]
+    """Embed texts with sentence-transformers."""
+    config = get_settings()
+    batch_size = config.batch_size
+    model_name = config.embedding_model
     model = get_st_model(model_name)
 
     texts_list = list(texts)
@@ -164,20 +158,10 @@ def _generate_embeddings_fastembed(
     texts: Iterable[str],
     show_progress: bool = True,
 ) -> list[list[float]]:
-    """Generate embeddings using fastembed backend.
-
-    Uses passage_embed for document embeddings.
-
-    Args:
-        texts: Iterable of text strings to embed.
-        show_progress: Whether to show a progress bar.
-
-    Returns:
-        List of embedding vectors (each as a list of floats).
-    """
-    config = get_effective_config()
-    batch_size = config["embeddings"]["batch_size"]
-    model_name = config["embeddings"]["embedding_model"]
+    """Embed passages with fastembed."""
+    config = get_settings()
+    batch_size = config.batch_size
+    model_name = config.embedding_model
 
     texts_list = list(texts)
     all_embeddings = []
@@ -192,12 +176,9 @@ def _generate_embeddings_fastembed(
         disable=not show_progress,
         file=sys.stderr,
     ) as pbar:
-        # fastembed processes in batches internally, but we can control batching
         for i in range(0, len(texts_list), batch_size):
             batch = texts_list[i : i + batch_size]
-            # passage_embed returns a generator of numpy arrays
             batch_embeddings = list(model.passage_embed(batch))
-            # Convert numpy arrays to lists of floats
             all_embeddings.extend([emb.tolist() for emb in batch_embeddings])
             pbar.update(len(batch))
 
@@ -208,18 +189,8 @@ def generate_embeddings(
     texts: Iterable[str],
     show_progress: bool = True,
 ) -> list[list[float]]:
-    """Generate embeddings for documents using the specified backend.
-
-    Args:
-        texts: Iterable of text strings to embed.
-        show_progress: Whether to show a progress bar.
-
-    Returns:
-        List of embedding vectors (each as a list of floats).
-    """
-
-    config = get_effective_config()
-    backend = config["embeddings"]["embedding_backend"]
+    """Embed texts with the configured backend."""
+    backend = get_settings().embedding_backend
 
     if backend == "fastembed":
         return _generate_embeddings_fastembed(texts, show_progress=show_progress)

@@ -1,1606 +1,288 @@
-import asyncio
-import json
-import platform
-import subprocess
-import sys
-import tempfile
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
+import functools
+from typing import TYPE_CHECKING, Callable, Optional
 
 import typer
 
-from openground.config import (
-    DEFAULT_LIBRARY_NAME,
-    SITEMAP_URL,
-    get_library_raw_data_dir,
-    get_config_path,
-    load_config,
-    save_config,
-    get_effective_config,
-    get_default_config,
-    clear_config_cache,
-    DEFAULT_LIBRARY_VERSION,
-)
-from openground.console import success, error, hint, warning
-from openground.extract.source import get_library_config, load_source_file
-from openground.query import library_version_exists, list_libraries_with_versions
+from openground.console import UserError, error, success, warning
+from openground.install import Client
 
-
-def is_local_path(source: str) -> bool:
-    """
-    Detect if a source string is a local path.
-
-    First checks if the path exists on the filesystem.
-    If not, falls back to pattern-based detection.
-
-    Args:
-        source: The source string to check
-
-    Returns:
-        True if the source appears to be a local path, False otherwise
-    """
-    # First check: filesystem existence (most reliable)
-    try:
-        expanded_path = Path(source).expanduser()
-        if expanded_path.exists():
-            return True
-    except (OSError, RuntimeError):
-        # Path might be invalid or have special characters, continue to pattern matching
-        pass
-
-    # Second check: pattern-based detection
-    # Check for absolute Unix paths (starting with /)
-    if source.startswith("/"):
-        return True
-
-    # Check for home directory expansion (starting with ~)
-    if source.startswith("~"):
-        return True
-
-    # Check for relative paths (./ or ../)
-    if source.startswith("./") or source.startswith("../"):
-        return True
-
-    # Check for Windows paths
-    if platform.system() == "Windows":
-        # Drive letter (e.g., C:\, D:\)
-        if len(source) >= 2 and source[0].isalpha() and source[1] == ":":
-            return True
-        # UNC paths (e.g., \\server\share)
-        if source.startswith("\\\\"):
-            return True
-        # Backslash paths (e.g., \Users\...)
-        if source.startswith("\\") and not source.startswith("\\\\"):
-            return True
-    else:
-        # On non-Windows, a backslash might indicate a Windows-style path being used
-        if "\\" in source:
-            return True
-
-    return False
-
+if TYPE_CHECKING:
+    from openground.service import SyncResult
 
 app = typer.Typer(
-    help="Openground is a CLI for storing and querying documentation in a local vector database.",
+    help="Index documentation into a local vector database and search it from AI agents.",
     no_args_is_help=True,
+    add_completion=False,
 )
 
-# Config Sub App
-config_app = typer.Typer(help="Manage openground configuration.")
-app.add_typer(config_app, name="config")
 
-# Nuke Sub App
-nuke_app = typer.Typer(
-    help="Delete all data from raw_data and/or LanceDB.",
-    no_args_is_help=True,
-)
-app.add_typer(nuke_app, name="nuke")
-
-# Stats Sub App
-stats_app = typer.Typer(
-    help="View and manage openground statistics.",
-    no_args_is_help=True,
-)
-app.add_typer(stats_app, name="stats")
-
-
-@app.callback(invoke_without_command=True)
-def ensure_config_exists(ctx: typer.Context):
-    """Ensure config file exists before running any command."""
-    # Avoid side effects (like writing config files) when Typer is doing
-    # resilient parsing (e.g. for --help, completion, etc.).
-    if getattr(ctx, "resilient_parsing", False):
-        return
-
-    config_path = get_config_path()
-    file_existed = config_path.exists()
-
-    # Explicitly create config file with defaults if it doesn't exist
-    if not config_path.exists():
-        default_config = get_default_config()
-        save_config(default_config)
-
-    # Load the effective config (now that we know it exists)
-    get_effective_config()
-
-    # Notify user if we just created it
-    if not file_existed and config_path.exists():
-        success(f"Config file created at {config_path}\n")
-
-
-@app.command("version")
-def version_cmd():
-    """Display the openground version."""
-    try:
-        from importlib.metadata import version
-
-        v = version("openground")
-        print(v)
-    except Exception:
-        # Fallback if package metadata is not available
-        print("unknown")
-
-
-@app.command("add")
-def add(
-    library: str = typer.Argument(
-        ..., help="Name of the library (or source key if no source is provided)."
-    ),
-    source: Optional[str] = typer.Option(
-        None,
-        "--source",
-        "-s",
-        help="Root sitemap URL, Git repo URL, or local path to process.",
-    ),
-    version: str | None = typer.Option(
-        None,
-        "--version",
-        "-v",
-        help="Version of the library to extract. Only works for git repos. Corresponds to the tag of the version in the git repo. Defaults to latest. Sitemap sources will always use latest.",
-    ),
-    docs_paths: list[str] = typer.Option(
-        [],
-        "--docs-path",
-        "-d",
-        help="Path to documentation within a git repo. Specify multiple times for multiple paths (e.g., -d docs/ -d wiki/). If not specified, indexes the entire repository.",
-    ),
-    filter_keywords: list[str] = typer.Option(
-        [],
-        "--filter-keyword",
-        "-f",
-        help="String filter for sitemap URLs. Only used for sitemap sources. Can be specified multiple times (e.g., -f docs -f /blog)",
-    ),
-    yes: bool = typer.Option(
-        False,
-        "--yes",
-        "-y",
-        help="Skip confirmation prompt between extract and ingest.",
-    ),
-    sources_file: Optional[str] = typer.Option(
-        None,
-        "--sources-file",
-        help="Path to a custom sources.json file. If not provided, checks config for 'sources.file_path', then uses default.",
-    ),
-    trim_query_params: bool = typer.Option(
-        False,
-        "--trim-query-params",
-        help="Trim query parameters from sitemap URLs to avoid duplicates.",
-    ),
-):
-    """
-    Extract documentation from a source (source file, sitemap, git, or local path) and ingest it.
-
-    This command detects the source type and performs the extraction
-    and ingestion in one step.
-
-    For git and local path sources, the following file extensions are parsed: .md, .rst, .txt, .mdx, .ipynb, .html, .htm
-    """
-    from rich.console import Console
-
-    console = Console()
-    config = get_effective_config()
-
-    # Determine which sources file to use (CLI option > config > default)
-    sources_file_path: Optional[Path] = None
-    if sources_file:
-        sources_file_path = Path(sources_file).expanduser()
-    elif "sources" in config and "file_path" in config["sources"]:
-        sources_file_path = Path(config["sources"]["file_path"]).expanduser()
-
-    # Resolve configuration from source file if possible (only if source is not provided)
-    source_config, actual_sources_path = None, None
-    if not source:
-        source_config, actual_sources_path = get_library_config(
-            library, custom_path=sources_file_path
-        )
-
-    # Print which sources file is being used if a config was found
-    if source_config and actual_sources_path:
-        hint(f"Using sources file: {actual_sources_path}")
-
-    # source_type: Which kind of source this is (sitemap, git_repo, local_path)
-    # final_source: The resolved URL/path after processing (e.g., extracted from GitHub web URL)
-    # These start with user input or None, then get resolved below
-    source_type = None
-    final_source = source
-    final_docs_paths = docs_paths
-    final_filter_keywords = filter_keywords
-
-    # Step 1: Populate from sources file config
-    # If a source_config was found, extract the type and URL/path
-    if source_config:
-        source_type = source_config.get("type")
-        if not final_source:
-            # Extract the appropriate URL based on source type
-            if source_type == "sitemap":
-                final_source = source_config.get("sitemap_url")
-            elif source_type == "git_repo":
-                final_source = source_config.get("repo_url")
-            elif source_type == "local_path":
-                final_source = source_config.get("local_path")
-
-        # Extract type-specific configs if not provided via CLI
-        if not final_docs_paths and source_type == "git_repo":
-            # Map 'docs_paths' from current json to final_docs_paths
-            final_docs_paths = source_config.get("docs_paths", [])
-
-        if not final_filter_keywords and source_type == "sitemap":
-            final_filter_keywords = source_config.get("filter_keywords", [])
-
-    # For local paths, generate date-based version
-    if source_type == "local_path":
-        version = datetime.now().strftime("local-%Y-%m-%d")
-
-    if version is None:
-        version = DEFAULT_LIBRARY_VERSION
-
-    # Detect if source is provided manually or type is unknown
-    if not final_source:
-        error(
-            f"No source provided for library '{library}'. "
-            f"Please provide a --source URL or use a library from the source file."
-        )
-        raise typer.Exit(1)
-
-    # Step 2: Auto-detect source type if not already determined
-    # This happens when user provides --source directly without a sources file entry
-    if not source_type:
-        # Detect type from URL or local path
-        # Priority: git/sitemap URLs first, then local paths
-        if any(domain in final_source for domain in ["github.com", "gitlab.com"]):
-            from openground.extract.git import parse_git_web_url
-
-            # Parse GitHub/GitLab web URLs to extract the actual git repo URL
-            # For example: "https://github.com/user/repo/tree/v1.0/docs"
-            # becomes: "https://github.com/user/repo.git"
-            repo_url, ref, doc_path = parse_git_web_url(final_source)
-            if repo_url != final_source:
-                final_source = repo_url
-                if ref and not version:
-                    version = ref
-                if doc_path and not final_docs_paths:
-                    final_docs_paths = [doc_path]
-
-            source_type = "git_repo"
-            # Keep final_docs_paths empty to index entire repo by default
-        elif final_source.endswith(".xml") or "sitemap" in final_source.lower():
-            source_type = "sitemap"
-        elif is_local_path(final_source):
-            # Check if it's a local path
-            source_type = "local_path"
-            # Generate date-based version for auto-detected local paths
-            version = datetime.now().strftime("local-%Y-%m-%d")
-        else:
-            # Try sitemap by default with warning
-            source_type = "sitemap"
-            warning(
-                f"Could not reliably detect source type for {final_source}. Defaulting to sitemap."
-            )
-
-    # At this point, source_type and final_source should be resolved
-    # - source_type: one of "sitemap", "git_repo", or "local_path"
-    # - final_source: the actual URL/path to use for extraction
-
-    if (
-        version is not None
-        and version != DEFAULT_LIBRARY_VERSION
-        and version != datetime.now().strftime("local-%Y-%m-%d")
-    ):
-        if source_type != "git_repo":
-            error(
-                f"--version can only be used for git repo sources. Detected source type '{source_type}' is not a git repo."
-            )
+def _handle_errors(fn: Callable) -> Callable:
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except UserError as e:
+            error(str(e))
             raise typer.Exit(1)
 
-    # Extract
-    # Determine version for directory path (always a string, defaults to "latest")
-    output_dir = get_library_raw_data_dir(library, version=version)
+    return wrapper
 
-    # Check if library version exists in LanceDB BEFORE extraction
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-    library_exists = library_version_exists(library, version, db_path, table_name)
 
-    # Handle case where library doesn't exist in LanceDB but raw files do
-    if not library_exists and output_dir.exists() and list(output_dir.glob("*.json")):
-        warning(
-            f"Found stale raw data files for '{library}' version '{version}' "
-            "that are not in LanceDB. Cleaning up..."
-        )
-        import shutil
+def _show_version(value: bool) -> None:
+    if value:
+        from importlib.metadata import PackageNotFoundError, version
 
         try:
-            shutil.rmtree(output_dir)
-        except (FileNotFoundError, OSError) as e:
-            warning(f"Could not remove stale files: {e}")
-        library_exists = False
+            typer.echo(version("openground"))
+        except PackageNotFoundError:
+            typer.echo("unknown")
+        raise typer.Exit()
 
-    if library_exists:
-        print(f"Library '{library}' version '{version}' already exists.")
-        print("Performing extraction and incremental update...")
 
-    # Step 3: Run the appropriate extraction based on source_type
-    async def _run_extract(extract_to_dir: Path):
-        if source_type == "sitemap":
-            with console.status("[bold green]"):
-                from openground.extract.sitemap import extract_pages as extract_main
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        False, "--version", callback=_show_version, is_eager=True, help="Show version."
+    ),
+):
+    pass
 
-            await extract_main(
-                sitemap_url=final_source,
-                concurrency_limit=config["extraction"]["concurrency_limit"],
-                library_name=library,
-                output_dir=extract_to_dir,
-                filter_keywords=final_filter_keywords,
-                version=version,
-                trim_query_params=trim_query_params,
-            )
-        elif source_type == "git_repo":
-            with console.status("[bold green]"):
-                from openground.extract.git import extract_repo
 
-            await extract_repo(
-                repo_url=final_source,
-                docs_paths=final_docs_paths,
-                output_dir=extract_to_dir,
-                library_name=library,
-                version=version,
-            )
-        elif source_type == "local_path":
-            with console.status("[bold green]"):
-                from openground.extract.local_path import extract_local_path
-
-            await extract_local_path(
-                local_path=Path(final_source).expanduser(),
-                output_dir=extract_to_dir,
-                library_name=library,
-                version=version,
-            )
-
-    with console.status("[bold green]"):
-        from openground.ingest import ingest_to_lancedb, load_parsed_pages
-
-    # For existing libraries, extract to temp directory for comparison
-    # For new libraries, extract directly to output_dir
-    if library_exists:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_extract_dir = Path(temp_dir)
-            asyncio.run(_run_extract(temp_extract_dir))
-
-            # Verify extraction completed
-            if not temp_extract_dir.exists():
-                raise typer.BadParameter(
-                    f"Extraction completed but temp directory not found at {temp_extract_dir}."
-                )
-
-            page_count = len(list(temp_extract_dir.glob("*.json")))
-            success(f"\nExtraction complete: {page_count} pages extracted")
-
-            from openground.update import perform_update
-
-            # Load newly extracted pages from temp directory
-            pages = load_parsed_pages(temp_extract_dir)
-
-            try:
-                summary = perform_update(
-                    extracted_pages=pages,
-                    library_name=library,
-                    version=version,
-                    db_path=db_path,
-                    table_name=table_name,
-                    raw_data_dir=output_dir,  # Permanent directory with existing files
-                )
-
-                print("\nUpdate Summary:")
-                print(f"  Added: {summary['added']} pages")
-                print(f"  Modified: {summary['modified']} pages")
-                print(f"  Deleted: {summary['deleted']} pages")
-                print(f"  Unchanged: {summary['unchanged']} pages")
-
-                if summary["added"] + summary["modified"] + summary["deleted"] == 0:
-                    success("No changes detected. Nothing to update.")
-                    return
-
-                success(f"Update complete: {library} ({version}) updated.")
-                return
-            except ValueError as e:
-                if "produced no pages" in str(e):
-                    error(f"{e}")
-                    raise typer.Exit(1)
-                raise
+def _report(result: "SyncResult") -> None:
+    label = f"{result.library} ({result.version})"
+    if result.error:
+        error(f"{label}: {result.error}")
+    elif result.summary is None:
+        success(f"Added {label}: {result.pages} pages.")
     else:
-        # New library - extract directly to output_dir
-        asyncio.run(_run_extract(output_dir))
-
-    # Embed
-    if not output_dir.exists():
-        raise typer.BadParameter(
-            f"Extraction completed but data directory not found at {output_dir}."
+        s = result.summary
+        changes = (
+            f"{s['added']} added, {s['modified']} modified, {s['deleted']} deleted"
         )
-
-    page_count = len(list(output_dir.glob("*.json")))
-    success(f"\nExtraction complete: {page_count} pages extracted to {output_dir}")
-
-    if not yes:
-        print("\nPress Enter to continue with embedding, or Ctrl+C to exit...")
-        try:
-            input()
-        except KeyboardInterrupt:
-            error("\nCancelled by user.")
-            raise typer.Abort()
-
-    pages = load_parsed_pages(output_dir)
-    ingest_to_lancedb(pages=pages)
-    success(f"Embedding complete: Library {library} ({version}) added to LanceDB.")
-
-    # Auto-add to local sources.json if configured and source was provided manually
-    if source and config.get("sources", {}).get("auto_add_local", True):
-        from openground.extract.source import save_source_to_sources, LibrarySource
-
-        new_source_config: LibrarySource = {
-            "type": source_type,  # type: ignore
-        }
-        if source_type == "sitemap":
-            new_source_config["sitemap_url"] = final_source
-            if final_filter_keywords:
-                new_source_config["filter_keywords"] = final_filter_keywords
-        elif source_type == "git_repo":
-            new_source_config["repo_url"] = final_source
-            if final_docs_paths:
-                new_source_config["docs_paths"] = final_docs_paths
-        elif source_type == "local_path":
-            new_source_config["local_path"] = final_source
-
-        save_source_to_sources(library, new_source_config)
-        success(f"Added source for '{library}' to ~/.openground/sources.json")
-        hint(
-            "Tip: Disable automatic addition to user sources by running:\n"
-            "  openground config set sources.auto_add_local false"
-        )
-
-
-def _update_all_libraries() -> None:
-    """
-    Update all libraries that have sources configured.
-
-    Updates all versions of each library and displays a consolidated summary.
-    Continues on error if one library update fails.
-    """
-    # Load sources configuration
-    sources = load_source_file()
-
-    if not sources:
-        warning("No libraries with sources found.")
-        return
-
-    # Get all libraries with versions from LanceDB
-    config = get_effective_config()
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-    all_libraries = list_libraries_with_versions(db_path, table_name)
-
-    if not all_libraries:
-        warning("No libraries found in database.")
-        return
-
-    # Filter to only libraries that have sources configured
-    libraries_to_update = {name: versions for name, versions in all_libraries.items() if name in sources}
-
-    if not libraries_to_update:
-        warning("No libraries with configured sources found in database.")
-        return
-
-    # Track results
-    total_versions = sum(len(versions) for versions in libraries_to_update.values())
-    successful_count = 0
-    failures: list[tuple[str, str, str]] = []  # (library, version, error_message)
-
-    # Update each library and each version
-    for library_name, versions in libraries_to_update.items():
-        for version in versions:
-            try:
-                add(
-                    library=library_name,
-                    source=None,  # Use configured source
-                    version=version,
-                    docs_paths=[],
-                    filter_keywords=[],
-                    yes=True,  # Skip prompts
-                    sources_file=None,
-                    trim_query_params=False,
-                )
-                successful_count += 1
-            except Exception as e:
-                error_msg = str(e)
-                failures.append((library_name, version, error_msg))
-
-    # Display consolidated summary
-    print()
-    success("Update Summary for All Libraries:")
-    print(f"  Processed: {total_versions} library versions across {len(libraries_to_update)} libraries")
-    print(f"  Successful: {successful_count}")
-    print(f"  Failed: {len(failures)}")
-
-    if failures:
-        print()
-        error("Failures:")
-        for lib_name, version, err_msg in failures:
-            print(f"  - {lib_name} (v{version}): {err_msg}")
-
-
-@app.command("update")
-def update_library(
-    library: Optional[str] = typer.Argument(None, help="Name of the library to update."),
-    version: str = typer.Option("latest", "--version", "-v", help="Version to update."),
-    source: Optional[str] = typer.Option(
-        None, "--source", "-s", help="Override source URL."
-    ),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip prompts."),
-    all_libraries: bool = typer.Option(False, "--all", help="Update all libraries with sources."),
-):
-    """
-    Update an existing library with changes from the source.
-
-    Efficiently updates only changed pages by comparing content hashes.
-    This is an alias for the add command when a library already exists.
-    """
-    # Validate --all flag combinations
-    if all_libraries:
-        if source is not None:
-            error("--all cannot be used with --source")
-            raise typer.Exit(1)
-        if version != "latest":
-            error("--all cannot be used with --version")
-            raise typer.Exit(1)
-        _update_all_libraries()
-        return
-
-    # Require library argument if not using --all
-    if library is None:
-        error("Either provide a library name or use --all to update all libraries")
-        raise typer.Exit(1)
-
-    add(
-        library=library,
-        source=source,
-        version=version,
-        docs_paths=[],
-        filter_keywords=[],
-        yes=yes,
-        sources_file=None,
-        trim_query_params=False,
-    )
+        if s["added"] + s["modified"] + s["deleted"] == 0:
+            success(f"{label} is up to date.")
+        else:
+            success(f"Updated {label}: {changes}, {s['unchanged']} unchanged.")
 
 
 @app.command()
-def extract_sitemap(
-    sitemap_url: str = typer.Option(
-        SITEMAP_URL, "--sitemap-url", "-s", help="Root sitemap URL to crawl."
+@_handle_errors
+def add(
+    name: str = typer.Argument(..., help="Library name."),
+    source: Optional[str] = typer.Argument(
+        None,
+        help="Git repo URL, sitemap URL, or local directory. Omit to reuse the remembered source.",
     ),
-    library: str = typer.Option(
-        DEFAULT_LIBRARY_NAME,
-        "--library",
-        "-l",
-        help="Name of the library/framework for this documentation.",
+    docs_paths: list[str] = typer.Option(
+        [], "--docs-path", "-d", help="Docs folder in a git repo (repeatable)."
+    ),
+    version: Optional[str] = typer.Option(
+        None, "--version", "-v", help="Git tag or branch (git sources only)."
     ),
     filter_keywords: list[str] = typer.Option(
         [],
-        "--filter-keyword",
+        "--filter",
         "-f",
-        help="Keyword filter applied to sitemap URLs. If none are provided, all URLs are extracted. Can be specified multiple times (e.g., -f docs -f /blog).",
+        help="Only index sitemap URLs containing this (repeatable).",
     ),
-    concurrency_limit: int | None = typer.Option(
+):
+    """Add a library or a new version of one (updates in place if that exact version is stored)."""
+    from openground.service import add_library
+
+    _report(add_library(name, source, version, docs_paths, filter_keywords))
+
+
+@app.command()
+@_handle_errors
+def update(
+    name: Optional[str] = typer.Argument(
         None,
-        "--concurrency-limit",
-        "-c",
-        help="Maximum number of concurrent requests.",
-        min=1,
-    ),
-    trim_query_params: bool = typer.Option(
-        False,
-        "--trim-query-params",
-        help="Trim query parameters from sitemap URLs to avoid duplicates.",
+        help="Library to update. Omit to update every library with a remembered source.",
     ),
 ):
-    """Run the extraction pipeline to fetch and parse pages from a sitemap."""
+    """Refresh stored libraries from their remembered sources."""
+    from openground.service import update_libraries
 
-    from openground.extract.sitemap import extract_pages
-
-    config = get_effective_config()
-
-    if concurrency_limit is None:
-        concurrency_limit = config["extraction"]["concurrency_limit"]
-
-    # Ensure concurrency_limit is an int for the type checker
-    limit: int = concurrency_limit  # type: ignore
-
-    version = "latest"
-    output_dir = get_library_raw_data_dir(library, version=version)
-
-    async def _run():
-        await extract_pages(
-            sitemap_url=sitemap_url,
-            concurrency_limit=limit,
-            library_name=library,
-            output_dir=output_dir,
-            filter_keywords=filter_keywords,
-            version=version,
-            trim_query_params=trim_query_params,
-        )
-
-    asyncio.run(_run())
+    results = update_libraries(name)
+    if not results:
+        warning("No libraries with a remembered source.")
+    for result in results:
+        _report(result)
+    if any(r.error for r in results):
+        raise typer.Exit(1)
 
 
-@app.command("extract-git")
-def extract_git(
-    repo_url: str = typer.Option(..., "--repo-url", "-r", help="Git repository URL."),
-    docs_paths: list[str] = typer.Option(
-        ...,
-        "--docs-path",
-        "-d",
-        help="Path to documentation within the repo. Specify multiple times for multiple paths (e.g., -d docs/ -d wiki/). Use '/' for the whole repo.",
-    ),
-    library: str = typer.Option(
-        DEFAULT_LIBRARY_NAME,
-        "--library",
-        "-l",
-        help="Name of the library/framework for this documentation.",
-    ),
-    version: str = typer.Option(
-        "latest",
-        "--version",
-        "-v",
-        help="Version of the library to extract. Corresponds to the tag of the version in the git repo. Defaults to latest.",
-    ),
-):
-    """Extract documentation from a git repository using shallow clone and sparse checkout."""
-    from openground.extract.git import extract_repo
-
-    output_dir = get_library_raw_data_dir(library, version=version)
-
-    async def _run():
-        await extract_repo(
-            repo_url=repo_url,
-            docs_paths=docs_paths,
-            output_dir=output_dir,
-            library_name=library,
-            version=version,
-        )
-
-    asyncio.run(_run())
-
-
-@app.command("embed")
-def embed(
-    library: str = typer.Argument(
-        ...,
-        help="Library name to embed from raw_data/{library}.",
-    ),
-    version: str = typer.Option(
-        "latest",
-        "--version",
-        "-v",
-        help="Version of the library to embed.",
-    ),
-):
-    """Chunk documents, generate embeddings, and embed into the local db."""
-    from rich.console import Console
-
-    console = Console()
-    with console.status("[bold green]"):
-        from openground.ingest import ingest_to_lancedb, load_parsed_pages
-
-    data_dir = get_library_raw_data_dir(library, version=version)
-
-    if not data_dir.exists():
-        raise typer.BadParameter(
-            f"Library '{library}'"
-            + (f" version '{version}'" if version else "")
-            + f" not found at {data_dir}. "
-            f"Use 'list-raw-libraries' to see available libraries."
-        )
-
-    pages = load_parsed_pages(data_dir)
-    ingest_to_lancedb(pages=pages)
-
-
-@app.command("query")
-def query_cmd(
-    query: str = typer.Argument(..., help="Query string for hybrid search."),
-    version: str = typer.Option(
-        DEFAULT_LIBRARY_VERSION, "--version", "-v", help="Version to filter results by."
-    ),
-    library: Optional[str] = typer.Option(
-        None,
-        "--library",
-        "-l",
-        help="Optional library name filter.",
-    ),
-    top_k: int | None = typer.Option(
-        None, "--top-k", "-k", help="Number of results to return."
-    ),
-):
-    """Run a hybrid search (semantic + BM25) against the local db."""
-    from openground.query import search
-
-    # Get config
-    config = get_effective_config()
-
-    # Get db_path and table_name from config
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-
-    # Use CLI flag if provided, otherwise use config value
-    if top_k is None:
-        top_k = config["query"]["top_k"]
-
-    # Ensure top_k is an int for the type checker
-    k: int = top_k  # type: ignore
-
-    results_md = search(
-        query=query,
-        version=version,
-        db_path=db_path,
-        table_name=table_name,
-        library_name=library,
-        top_k=k,
-    )
-    print(results_md)
-
-
-@app.command("list-libraries")
-@app.command("ls")
-def list_libraries_cmd():
-    """List available libraries and their versions stored in the local db."""
+@app.command()
+@_handle_errors
+def ls():
+    """List stored libraries and versions."""
     from rich.console import Console
     from rich.table import Table
 
-    console = Console()
-    with console.status("[bold green]"):
-        from openground.query import list_libraries_with_versions
+    from openground.service import list_libraries
 
-    # Get config
-    config = get_effective_config()
-
-    # Get db_path and table_name from config
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-
-    libraries_with_versions = list_libraries_with_versions(
-        db_path=db_path, table_name=table_name
-    )
-    if not libraries_with_versions:
-        print("No libraries found.")
+    libraries = list_libraries()
+    if not libraries:
+        typer.echo("No libraries found. Add one with: openground add NAME SOURCE")
         return
 
-    table = Table(title="Available Libraries")
+    table = Table()
     table.add_column("Library", style="cyan", no_wrap=True)
     table.add_column("Versions", style="green")
-
-    for lib_name, versions in libraries_with_versions.items():
-        versions_str = ", ".join(versions)
-        table.add_row(lib_name, versions_str)
-
-    console.print(table)
+    table.add_column("Source remembered")
+    for name, versions, remembered in libraries:
+        table.add_row(name, ", ".join(versions), "yes" if remembered else "no")
+    Console().print(table)
 
 
-@app.command("list-raw-libraries")
-def list_raw_libraries_cmd():
-    """List available libraries in the raw_data directory."""
-    config = get_effective_config()
-    raw_data_dir = Path(config["raw_data_dir"]).expanduser()
-    if not raw_data_dir.exists():
-        print("No libraries found in raw_data.")
-        return
-
-    libraries_with_versions: dict[str, list[str]] = {}
-    for lib_dir in raw_data_dir.iterdir():
-        if lib_dir.is_dir():
-            lib_name = lib_dir.name
-            versions = [d.name for d in lib_dir.iterdir() if d.is_dir()]
-            if versions:
-                libraries_with_versions[lib_name] = sorted(versions)
-
-    if not libraries_with_versions:
-        print("No libraries found in raw_data.")
-        return
-
-    print("Available libraries in raw_data:")
-    for lib_name, versions in sorted(libraries_with_versions.items()):
-        versions_str = ", ".join(versions)
-        print(f"{lib_name}: {versions_str}")
-
-
-@app.command("remove")
-@app.command("rm")
-def remove_library_cmd(
-    library_name: str = typer.Argument(..., help="Name of the library to remove."),
-    version: str = typer.Option(
-        ..., "--version", "-v", help="Version of the library to remove."
+@app.command()
+@_handle_errors
+def rm(
+    name: str = typer.Argument(..., help="Library name."),
+    version: Optional[str] = typer.Option(
+        None,
+        "--version",
+        "-v",
+        help="Version to delete (optional if only one is stored).",
     ),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
 ):
-    """Remove all documents for a library version from the local db."""
-    from openground.query import get_library_stats, delete_library
+    """Delete a stored version (forgets the source with the last one)."""
+    from openground.query import get_library_stats
+    from openground.service import remove_library, resolve_version
 
-    # Get config
-    config = get_effective_config()
-
-    # Get db_path and table_name from config
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-
-    stats = get_library_stats(library_name, version, db_path, table_name)
-    if not stats:
-        print(f"Library '{library_name}' version '{version}' not found.")
-        raise typer.Exit(1)
-
-    # Show confirmation info
-    print(f"\nLibrary: {stats['library_name']}")
-    print(f"Version: {stats['version']}")
-    print(f"  Chunks: {stats['chunk_count']}")
-    print(f"  Pages:  {stats['unique_urls']}")
-    if stats["titles"]:
-        print(f"  Sample titles: {', '.join(stats['titles'][:3])}")
-    else:
-        print("  Sample titles: (no titles available)")
-
+    version = resolve_version(name, version)
+    stats = get_library_stats(name, version) or {}
     if not yes:
         typer.confirm(
-            "\nAre you sure you want to delete this library version?", abort=True
+            f"Delete {name} ({version}): {stats.get('unique_urls', 0)} pages, "
+            f"{stats.get('chunk_count', 0)} chunks?",
+            abort=True,
         )
-
-    deleted = delete_library(library_name, version, db_path, table_name)
-    success(
-        f"\nDeleted {deleted} chunks for library '{library_name}' version '{version}'."
-    )
-
-    # Check if raw library directory exists and offer to delete
-    if not yes:
-        raw_library_dir = get_library_raw_data_dir(library_name, version=version)
-        if raw_library_dir.exists():
-            if typer.confirm(f"\nAlso delete raw files at {raw_library_dir}?"):
-                import shutil
-
-                shutil.rmtree(raw_library_dir)
-                success(f"Deleted raw library files at {raw_library_dir}.")
+    remove_library(name, version)
+    success(f"Removed {name} ({version}).")
 
 
-def _install_to_claude_code() -> None:
-    """Install openground to Claude Code using the claude CLI."""
-    try:
-        # First, remove any existing openground MCP config to ensure clean install
-        print("Removing existing openground MCP config if it exists...")
-        remove_cmd = [
-            "claude",
-            "mcp",
-            "remove",
-            "openground",
-            "--scope",
-            "user",
-        ]
-        subprocess.run(
-            remove_cmd,
-            capture_output=True,
-            check=False,
-        )
+@app.command()
+@_handle_errors
+def search(
+    query: str = typer.Argument(..., help="Search query."),
+    library: Optional[str] = typer.Option(
+        None, "--library", "-l", help="Limit to a library."
+    ),
+    version: Optional[str] = typer.Option(
+        None, "--version", "-v", help="Limit to a version."
+    ),
+    top_k: Optional[int] = typer.Option(
+        None, "--top-k", "-k", min=1, help="Number of results."
+    ),
+):
+    """Hybrid (semantic + keyword) search over stored docs."""
+    from openground.query import search as run_search
 
-        # Build the command - uses the openground-mcp entry point
-        cmd = [
-            "claude",
-            "mcp",
-            "add",
-            "--transport",
-            "stdio",
-            "--scope",
-            "user",
-            "openground",
-            "--",
-            "openground-mcp",
-        ]
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-
-        if result.returncode == 0:
-            success("Successfully installed openground to Claude Code!")
-            if result.stdout:
-                print(result.stdout)
-        else:
-            error("Failed to install to Claude Code.")
-            if result.stderr:
-                print(f"Error: {result.stderr}")
-            if result.stdout:
-                print(f"Output: {result.stdout}")
-            sys.exit(1)
-
-    except FileNotFoundError:
-        error("Error: 'claude' CLI not found in PATH.")
-        print("\nPlease install Claude Code CLI first:")
-        print("  https://code.claude.com/docs/en/cli")
-        print("\nAlternatively, you can manually install by running:")
-        print("  openground install-mcp")
-        print("  (without --claude-code flag)")
-        sys.exit(1)
-    except Exception as e:
-        error(f"Error installing to Claude Code: {e}")
-        print("\nYou can manually install by running:")
-        print("  openground install-mcp")
-        print("  (without --claude-code flag)")
-        sys.exit(1)
+    typer.echo(run_search(query, version=version, library_name=library, top_k=top_k))
 
 
-def _get_cursor_config_path() -> Path:
-    """Determine the Cursor MCP config file path based on OS."""
-    system = platform.system()
-    if system == "Windows":
-        # Windows: %APPDATA%\Cursor\mcp.json
-        appdata = Path.home() / "AppData" / "Roaming"
-        return appdata / "Cursor" / "mcp.json"
-    elif system == "Darwin":  # macOS
-        # macOS: ~/.cursor/mcp.json
-        return Path.home() / ".cursor" / "mcp.json"
-    else:  # Linux and others
-        # Linux: ~/.config/cursor/mcp.json
-        return Path.home() / ".cursor" / "mcp.json"
+@app.command()
+@_handle_errors
+def serve():
+    """Run the MCP server on stdio (same as `openground-mcp`)."""
+    from openground.server import run_server
 
-
-def _get_opencode_config_path() -> Path:
-    """Determine the OpenCode config file path."""
-    return Path.home() / ".config" / "opencode" / "opencode.json"
-
-
-def _find_openground_mcp_command() -> str:
-    """Find the openground-mcp command, returning full path if found, otherwise the command name."""
-    import shutil
-
-    command_path = shutil.which("openground-mcp")
-    if command_path:
-        return str(Path(command_path).resolve())
-    return "openground-mcp"
-
-
-def _install_to_cursor() -> None:
-    """Safely install openground to Cursor's MCP configuration."""
-    config_path = _get_cursor_config_path()
-
-    # Create parent directory if it doesn't exist
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Read existing config or start with empty structure
-    existing_config = {"mcpServers": {}}
-    if config_path.exists():
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                if content.strip():  # Only parse if file has content
-                    existing_config = json.loads(content)
-                    # Ensure mcpServers key exists
-                    if "mcpServers" not in existing_config:
-                        existing_config["mcpServers"] = {}
-        except json.JSONDecodeError as e:
-            error(f"Error: {config_path} contains invalid JSON.")
-            print(f"   Parse error: {e}")
-            print("\nPlease fix the file manually or delete it to start fresh.")
-            sys.exit(1)
-        except Exception as e:
-            error(f"Error reading {config_path}: {e}")
-            sys.exit(1)
-
-    # Check if openground already exists
-    if "openground" in existing_config.get("mcpServers", {}):
-        warning("Warning: 'openground' is already configured in Cursor.")
-        print("Current config will be updated.")
-
-    # Create backup before modifying
-    if config_path.exists():
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = config_path.parent / f"{config_path.name}.backup.{timestamp}"
-        try:
-            import shutil
-
-            shutil.copy2(config_path, backup_path)
-            print(f"Created backup: {backup_path}")
-        except Exception as e:
-            warning(f"Warning: Could not create backup: {e}")
-            print("Proceeding without backup...")
-
-    # Build new config - uses the openground-mcp entry point
-    mcp_command = _find_openground_mcp_command()
-    new_server_config = {
-        "command": mcp_command,
-    }
-
-    # Merge into existing config
-    existing_config["mcpServers"]["openground"] = new_server_config
-
-    # Write atomically: write to temp file, validate, then rename
-    tmp_path: Optional[Path] = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=config_path.parent,
-            delete=False,
-            suffix=".tmp",
-        ) as tmp_file:
-            # Write JSON with proper formatting
-            json.dump(existing_config, tmp_file, indent=2, ensure_ascii=False)
-            tmp_path = Path(tmp_file.name)
-
-        # Validate the temp file is valid JSON
-        try:
-            with open(tmp_path, "r", encoding="utf-8") as f:
-                json.load(f)
-        except json.JSONDecodeError as e:
-            if tmp_path and tmp_path.exists():
-                tmp_path.unlink()  # Clean up temp file
-            error(f"Error: Generated configuration is invalid JSON: {e}")
-            sys.exit(1)
-
-        # Atomic rename
-        if tmp_path:
-            tmp_path.replace(config_path)
-        success("Successfully installed openground to Cursor!")
-        print(f"   Configuration written to: {config_path}")
-        hint("\nRestart Cursor to apply changes.")
-
-    except PermissionError:
-        error(f"Error: Permission denied writing to {config_path}")
-        print("   Please check file permissions or run with appropriate privileges.")
-        if tmp_path and tmp_path.exists():
-            tmp_path.unlink()  # Clean up temp file
-        sys.exit(1)
-    except Exception as e:
-        error(f"Error writing configuration: {e}")
-        if tmp_path and tmp_path.exists():
-            tmp_path.unlink()  # Clean up temp file
-        sys.exit(1)
-
-
-def _install_to_opencode() -> None:
-    """Safely install openground to OpenCode's MCP configuration."""
-    config_path = _get_opencode_config_path()
-
-    # Create parent directory if it doesn't exist
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Read existing config or start with empty structure
-    existing_config = {"mcp": {}}
-    if config_path.exists():
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                if content.strip():  # Only parse if file has content
-                    existing_config = json.loads(content)
-                    # Ensure mcp key exists
-                    if "mcp" not in existing_config:
-                        existing_config["mcp"] = {}
-        except json.JSONDecodeError as e:
-            error(f"Error: {config_path} contains invalid JSON.")
-            print(f"   Parse error: {e}")
-            print("\nPlease fix the file manually or delete it to start fresh.")
-            sys.exit(1)
-        except Exception as e:
-            error(f"Error reading {config_path}: {e}")
-            sys.exit(1)
-
-    # Check if openground already exists
-    if "openground" in existing_config.get("mcp", {}):
-        warning("Warning: 'openground' is already configured in OpenCode.")
-        print("Current config will be updated.")
-
-    # Create backup before modifying
-    if config_path.exists():
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = config_path.parent / f"{config_path.name}.backup.{timestamp}"
-        try:
-            import shutil
-
-            shutil.copy2(config_path, backup_path)
-            print(f"Created backup: {backup_path}")
-        except Exception as e:
-            warning(f"Warning: Could not create backup: {e}")
-            print("Proceeding without backup...")
-
-    # Build new config - uses the openground-mcp entry point
-    mcp_command = _find_openground_mcp_command()
-    new_server_config = {
-        "type": "local",
-        "command": [mcp_command],
-        "enabled": True,
-    }
-
-    # Merge into existing config
-    existing_config["mcp"]["openground"] = new_server_config
-
-    # Write atomically: write to temp file, validate, then rename
-    tmp_path: Optional[Path] = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=config_path.parent,
-            delete=False,
-            suffix=".tmp",
-        ) as tmp_file:
-            # Write JSON with proper formatting
-            json.dump(existing_config, tmp_file, indent=2, ensure_ascii=False)
-            tmp_path = Path(tmp_file.name)
-
-        # Validate the temp file is valid JSON
-        try:
-            with open(tmp_path, "r", encoding="utf-8") as f:
-                json.load(f)
-        except json.JSONDecodeError as e:
-            if tmp_path and tmp_path.exists():
-                tmp_path.unlink()  # Clean up temp file
-            error(f"Error: Generated configuration is invalid JSON: {e}")
-            sys.exit(1)
-
-        # Atomic rename
-        if tmp_path:
-            tmp_path.replace(config_path)
-        success("Successfully installed openground to OpenCode!")
-        print(f"   Configuration written to: {config_path}")
-        hint("\nRestart OpenCode to apply changes.")
-
-    except PermissionError:
-        error(f"Error: Permission denied writing to {config_path}")
-        print("   Please check file permissions or run with appropriate privileges.")
-        if tmp_path and tmp_path.exists():
-            tmp_path.unlink()  # Clean up temp file
-        sys.exit(1)
-    except Exception as e:
-        error(f"Error writing configuration: {e}")
-        if tmp_path and tmp_path.exists():
-            tmp_path.unlink()  # Clean up temp file
-        sys.exit(1)
+    run_server()
 
 
 @app.command("install-mcp")
-def install_cmd(
-    claude_code: bool = typer.Option(
-        False,
-        "--claude-code",
-        help="Automatically install to Claude Code using the claude CLI.",
+@_handle_errors
+def install_mcp(
+    client: Optional[Client] = typer.Argument(
+        None, help="Client to configure. Omit to print the MCP JSON."
     ),
-    cursor: bool = typer.Option(
-        False,
-        "--cursor",
-        help="Automatically install to Cursor by modifying ~/.cursor/mcp.json (or equivalent).",
-    ),
-    opencode: bool = typer.Option(
-        False,
-        "--opencode",
-        help="Automatically install to OpenCode by modifying ~/.config/opencode/opencode.json.",
-    ),
-    wsl: bool = typer.Option(
-        False,
-        "--wsl",
-        help="Generate WSL-compatible configuration (uses wsl.exe wrapper).",
-    ),
+    wsl: bool = typer.Option(False, "--wsl", help="Launch the server through wsl.exe."),
 ):
-    """Generate MCP server configuration JSON for agents."""
-    if claude_code:
-        _install_to_claude_code()
-    elif cursor:
-        _install_to_cursor()
-    elif opencode:
-        _install_to_opencode()
-    else:
-        # Default behavior: show JSON configuration
-        if wsl:
-            # For WSL, use wsl.exe wrapper to call the entry point
-            config = {
-                "mcpServers": {
-                    "openground": {
-                        "command": "wsl.exe",
-                        "args": ["openground-mcp"],
-                    }
-                }
-            }
-        else:
-            mcp_command = _find_openground_mcp_command()
-            config = {
-                "mcpServers": {
-                    "openground": {
-                        "command": mcp_command,
-                    }
-                }
-            }
+    """Print or register the MCP server config."""
+    from openground.install import install_to, mcp_config_json
 
-        json_str = json.dumps(config, indent=2)
-
-        # Build ASCII box
-        title = " MCP Configuration "
-        lines = json_str.split("\n")
-        box_width = max(max(len(line) for line in lines), len(title)) + 4
-
-        # Borders
-        side_len = (box_width - len(title)) // 2
-        top_border = "-" * side_len + title + "-" * side_len
-        if len(top_border) < box_width:
-            top_border += "-"
-        bottom_border = "-" * len(top_border)
-
-        # Print the box
-        print()
-        print(top_border)
-        print()
-        print(json_str)
-        print()
-        print(bottom_border)
-
-        # Instructions
-        print()
-        print("Copy the JSON above into your MCP configuration file.")
-        print(
-            "Tip: Run `openground install-mcp --claude-code`, `openground install-mcp --cursor`, or `openground install-mcp --opencode` to automatically install."
+    if client is None:
+        typer.echo(mcp_config_json(wsl))
+        typer.echo(
+            "\nPaste this into your client's MCP config, or run "
+            "`openground install-mcp claude-code|cursor|opencode`.",
+            err=True,
         )
-        print()
-
-
-@config_app.command("show")
-def config_show(
-    defaults: bool = typer.Option(
-        False, "--defaults", help="Show only hardcoded defaults (ignore user config)."
-    ),
-):
-    """Display current configuration."""
-    config_path = get_config_path()
-    print(f"Path to config file: {config_path}\n")
-
-    if defaults:
-        # Show hardcoded defaults from source of truth
-        config = get_default_config()
-        print("Default values:")
-        print(json.dumps(config, indent=2))
-    else:
-        # Show effective config
-        config = get_effective_config()
-        print(json.dumps(config, indent=2))
-
-
-@config_app.command("set")
-def config_set(
-    key: str = typer.Argument(
-        ..., help="Config key (use dot notation like 'embeddings.chunk_size')"
-    ),
-    value: str = typer.Argument(..., help="Value to set"),
-):
-    """Set a configuration value."""
-    # Load current config (not merged with defaults)
-    config = load_config()
-
-    # Parse the key (support dot notation)
-    parts = key.split(".")
-
-    # Convert value to an appropriate type.
-    #
-    # Supports JSON literals for booleans, null, arrays, and objects:
-    #   openground config set query.top_k 7
-    # For plain strings, keep as-is (no quotes needed).
-    try:
-        parsed_value = json.loads(value)
-    except json.JSONDecodeError:
-        parsed_value = value
-
-    # Validate embedding_backend if setting embeddings.embedding_backend
-    if key == "embeddings.embedding_backend":
-        if parsed_value not in ("sentence-transformers", "fastembed"):
-            error(
-                f"Error: Invalid value for 'embeddings.embedding_backend': '{parsed_value}'. Must be 'sentence-transformers' or 'fastembed'."
-            )
-            raise typer.Exit(1)
-
-    # Navigate to the right place in the config (supports arbitrary depth).
-    if not parts or any(not p for p in parts):
-        error(f"Error: Invalid key format '{key}'.")
-        raise typer.Exit(1)
-
-    cur = config
-    for part in parts[:-1]:
-        existing = cur.get(part)
-        if existing is None:
-            cur[part] = {}
-            existing = cur[part]
-        if not isinstance(existing, dict):
-            error(
-                f"Error: Cannot set '{key}' because '{part}' is not an object in config."
-            )
-            raise typer.Exit(1)
-        cur = existing
-    cur[parts[-1]] = parsed_value
-
-    # Save config
-    save_config(config)
-    clear_config_cache()
-
-    success(f"Set {key} = {parsed_value}")
-    print(f"   Config saved to {get_config_path()}")
-
-
-@config_app.command("get")
-def config_get(
-    key: str = typer.Argument(
-        ..., help="Config key (use dot notation like 'embeddings.chunk_size')"
-    ),
-):
-    """Get a configuration value."""
-    config = get_effective_config()
-
-    # Parse the key (support dot notation)
-    parts = key.split(".")
-
-    try:
-        if not parts or any(not p for p in parts):
-            error(f"Error: Invalid key format '{key}'.")
-            raise typer.Exit(1)
-
-        cur: object = config
-        for part in parts:
-            if not isinstance(cur, dict) or part not in cur:
-                raise KeyError(part)
-            cur = cur[part]
-
-        print(cur)
-    except KeyError:
-        error(f"Error: Key '{key}' not found in config.")
-        raise typer.Exit(1)
-
-
-@config_app.command("path")
-def config_path():
-    """Print the path to the configuration file."""
-    print(get_config_path())
-
-
-@config_app.command("reset")
-def config_reset(
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
-):
-    """Reset configuration to defaults (deletes the config file)."""
-    config_path = get_config_path()
-
-    if not config_path.exists():
-        print("No config file exists. Nothing to reset.")
         return
-
-    if not yes:
-        typer.confirm(f"Delete config file at {config_path}?", abort=True)
-
-    config_path.unlink()
-    clear_config_cache()
-    success(f"Config file deleted: {config_path}")
-    print("   All settings will use defaults.")
+    install_to(client, wsl)
 
 
-def _delete_directory_with_cache(
-    path: Path, item_type: str, clear_caches: bool = False
-) -> bool:
-    """
-    Delete a directory with optional cache clearing.
-
-    Args:
-        path: Directory path to delete
-        item_type: Type of item for success message (e.g., "LanceDB directory", "raw data directory")
-        clear_caches: If True, clear query caches after deletion
-
-    Returns:
-        True if directory was deleted, False if it didn't exist
-    """
-    import shutil
-    from openground.query import clear_query_caches
-
-    if path.exists():
-        shutil.rmtree(path)
-        if clear_caches:
-            clear_query_caches()
-        success(f"Deleted {item_type}: {path}")
-        return True
-    return False
-
-
-@nuke_app.command("all")
-def nuke_all(
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
-):
-    """Delete all files in both raw_data and LanceDB directories."""
-    from openground.query import list_libraries
-
-    config = get_effective_config()
-    raw_data_dir = Path(config["raw_data_dir"]).expanduser()
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-
-    # Count libraries in raw_data
-    raw_libraries = []
-    if raw_data_dir.exists():
-        raw_libraries = [d.name for d in raw_data_dir.iterdir() if d.is_dir()]
-    raw_count = len(raw_libraries)
-
-    # Count libraries in embeddings
-    embedding_libraries = []
-    try:
-        embedding_libraries = list_libraries(db_path=db_path, table_name=table_name)
-    except Exception:
-        # Table might not exist, that's okay
-        pass
-    embedding_count = len(embedding_libraries)
-
-    # Show summary
-    warning("\nThis will permanently delete ALL data:")
-    print(f"  • Raw data: {raw_count} libraries in {raw_data_dir}")
-    print(f"  • Embeddings: {embedding_count} libraries in {db_path}")
-    print()
-
-    if raw_count == 0 and embedding_count == 0:
-        print("No data found. Nothing to delete.")
-        return
-
-    hint(
-        "Tip: Run 'openground list-raw-libraries' and 'openground list-libraries' "
-        "to see what will be deleted."
+@app.command()
+@_handle_errors
+def config():
+    """Show settings and data locations."""
+    from openground.config import (
+        get_config_path,
+        get_data_home,
+        get_db_path,
+        get_raw_data_dir,
+        get_settings,
+        get_sources_path,
     )
-    print()
 
-    if not yes:
-        typer.confirm(
-            "Are you sure you want to delete ALL data? This cannot be undone!",
-            abort=True,
-        )
+    path = get_config_path()
+    typer.echo(
+        f"Config file: {path}"
+        + ("" if path.exists() else " (not created; using defaults)")
+    )
+    typer.echo("Edit it to change settings; delete it to reset.\n")
+    settings = get_settings()
+    from openground.query import check_embedding_config
 
-    # Delete raw_data
-    _delete_directory_with_cache(raw_data_dir, "raw data directory")
-
-    # Delete db_path
-    _delete_directory_with_cache(db_path, "LanceDB directory", clear_caches=True)
-
-    if raw_count > 0 or embedding_count > 0:
-        success(
-            f"\nDeleted all data ({raw_count} raw libraries, {embedding_count} embedded libraries)."
-        )
-
-
-@nuke_app.command("raw_data")
-def nuke_raw_data(
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
-):
-    """Delete all files in the raw_data directory."""
-    config = get_effective_config()
-    raw_data_dir = Path(config["raw_data_dir"]).expanduser()
-
-    # Count libraries in raw_data
-    raw_libraries = []
-    if raw_data_dir.exists():
-        raw_libraries = [d.name for d in raw_data_dir.iterdir() if d.is_dir()]
-    raw_count = len(raw_libraries)
-
-    # Show summary
-    warning("\nThis will permanently delete ALL raw data:")
-    print(f"  • {raw_count} libraries in {raw_data_dir}")
-    print()
-
-    if raw_count == 0:
-        print("No raw data found. Nothing to delete.")
-        return
-
-    hint("Tip: Run 'openground list-raw-libraries' to see what will be deleted.")
-    print()
-
-    if not yes:
-        typer.confirm(
-            "Are you sure you want to delete ALL raw data? This cannot be undone!",
-            abort=True,
-        )
-
-    # Delete raw_data
-    if _delete_directory_with_cache(raw_data_dir, "raw data directory"):
-        success(f"\nDeleted {raw_count} raw libraries.")
-
-
-@nuke_app.command("embeddings")
-def nuke_embeddings(
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
-):
-    """Delete all files in the LanceDB directory."""
-    from openground.query import list_libraries
-
-    config = get_effective_config()
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-
-    # Count libraries in embeddings
-    embedding_libraries = []
     try:
-        embedding_libraries = list_libraries(db_path=db_path, table_name=table_name)
-    except Exception:
-        # Do nothing if table doesn't exist
-        pass
-    embedding_count = len(embedding_libraries)
+        check_embedding_config()
+    except UserError as e:
+        warning(str(e))
+    typer.echo(settings.model_dump_json(indent=2))
+    typer.echo(f"\nDatabase:    {get_db_path()}")
+    typer.echo(f"Raw files:   {get_raw_data_dir()}")
+    typer.echo(f"Stats:       {get_data_home() / 'stats.json'}")
+    typer.echo(f"Sources:     {get_sources_path()}")
 
-    warning("\nThis will permanently delete ALL embeddings:")
-    print(f"  • {embedding_count} libraries in {db_path}")
-    print()
 
-    if embedding_count == 0:
-        print("No embeddings found. Nothing to delete.")
+@app.command()
+@_handle_errors
+def stats(
+    reset: bool = typer.Option(False, "--reset", help="Zero the tool call counters."),
+):
+    """Show library/chunk counts and MCP tool call counts."""
+    from openground.query import count_chunks, list_libraries_with_versions
+    from openground.stats import load_tool_calls, reset_stats
+
+    if reset:
+        reset_stats()
+        success("Tool call counts reset.")
         return
 
-    hint("Tip: Run 'openground list-libraries' to see what will be deleted.")
-    print()
+    calls = load_tool_calls()
+    typer.echo(f"Libraries: {len(list_libraries_with_versions())}")
+    typer.echo(f"Chunks:    {count_chunks()}")
+    typer.echo("Tool calls:")
+    for tool, count in sorted(calls.items()):
+        typer.echo(f"  {tool}: {count}")
+
+
+@app.command()
+@_handle_errors
+def reset(yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation.")):
+    """Delete ALL local data (embeddings, raw files, stats). Remembered sources are kept."""
+    from openground.config import get_data_home
+    from openground.service import reset_data
 
     if not yes:
         typer.confirm(
-            "Are you sure you want to delete ALL embeddings? This cannot be undone!",
+            f"Delete all embeddings, raw files and stats in {get_data_home()}?",
             abort=True,
         )
-
-    # Delete db_path
-    if _delete_directory_with_cache(db_path, "LanceDB directory", clear_caches=True):
-        success(f"\nDeleted {embedding_count} embedded libraries.")
-
-
-@stats_app.command("show")
-def stats_show():
-    """Display openground statistics."""
-    from openground.stats import load_stats
-
-    config = get_effective_config()
-    db_path = Path(config["db_path"]).expanduser()
-    table_name = config["table_name"]
-
-    stats = load_stats(db_path=db_path, table_name=table_name)
-
-    print("Openground Statistics")
-    print("=" * 50)
-    print(f"Libraries: {stats['libraries_count']}")
-    print(f"Total chunks: {stats['total_chunks']}")
-    print("\nTool calls:")
-    for tool_name in sorted(stats["tool_calls"].keys()):
-        count = stats["tool_calls"][tool_name]
-        print(f"  {tool_name}: {count}")
-
-
-@stats_app.command("reset")
-def stats_reset(
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
-):
-    """Clear tool call statistics (reset to zero)."""
-    from openground.stats import reset_stats
-
-    if not yes:
-        typer.confirm(
-            "Are you sure you want to clear all tool call statistics?", abort=True
-        )
-
-    reset_stats()
-    success("Statistics cleared. Tool call counts reset to zero.")
+    reset_data()
+    success("Deleted embeddings, raw files and stats.")
 
 
 if __name__ == "__main__":
