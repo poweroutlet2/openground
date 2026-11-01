@@ -1,10 +1,11 @@
 """Remembered library sources (sources.json next to config.json)."""
 
 import json
+from pathlib import Path
 from typing import Literal, TypedDict
 
 from openground.config import get_sources_path
-from openground.console import UserError
+from openground.console import UserError, warning
 
 
 class LibrarySource(TypedDict, total=False):
@@ -46,8 +47,29 @@ def _validate(path, data) -> dict[str, LibrarySource]:
     return data
 
 
+def _migrate_legacy_sources(path: Path) -> None:
+    """Copy valid entries from the pre-0.15 ~/.openground/sources.json, once."""
+    legacy = Path.home() / ".openground" / "sources.json"
+    try:
+        data = json.loads(legacy.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict):
+        return
+    valid = {}
+    for name, entry in data.items():
+        try:
+            valid.update(_validate(legacy, {name: entry}))
+        except UserError:
+            pass
+    _write(valid)
+    warning(f"Imported {len(valid)} remembered sources from {legacy} into {path}")
+
+
 def load_sources() -> dict[str, LibrarySource]:
     path = get_sources_path()
+    if not path.exists():
+        _migrate_legacy_sources(path)
     if not path.exists():
         return {}
     try:

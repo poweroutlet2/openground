@@ -1,5 +1,6 @@
 import pytest
 
+from openground.config import get_settings
 from openground.console import UserError
 from openground.query import (
     check_embedding_config,
@@ -91,6 +92,16 @@ class TestEmbeddingConfig:
         with pytest.raises(UserError, match="openground reset") as exc:
             check_embedding_config()
         assert "config.json" in str(exc.value)
+
+    def test_unset_config_adopts_stored_values(self, fake_source):
+        write_config({"embedding_backend": "fastembed"})
+        add_library("lib", GIT)
+        write_config({})
+
+        check_embedding_config()
+
+        assert get_settings().embedding_backend == "fastembed"
+        assert "Found" in search("page")
 
     def test_search_refuses_mismatched_model(self, two_versions):
         write_config({"embedding_backend": "fastembed"})

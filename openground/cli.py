@@ -234,6 +234,12 @@ def config():
     )
     typer.echo("Edit it to change settings; delete it to reset.\n")
     settings = get_settings()
+    from openground.query import check_embedding_config
+
+    try:
+        check_embedding_config()
+    except UserError as e:
+        warning(str(e))
     typer.echo(settings.model_dump_json(indent=2))
     typer.echo(f"\nDatabase:    {get_db_path()}")
     typer.echo(f"Raw files:   {get_raw_data_dir()}")

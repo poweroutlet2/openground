@@ -330,14 +330,15 @@ class TestConfig:
         assert f"Config file: {get_config_path()}" in result.output
         assert "Invalid config file" in result.output
 
-    def test_legacy_config_explains_the_change(self):
+    def test_legacy_config_is_migrated(self):
         get_config_path().parent.mkdir(parents=True, exist_ok=True)
         get_config_path().write_text('{"embeddings": {"batch_size": 8}}')
 
         result = invoke("config")
 
-        assert result.exit_code == 1
-        assert "flat keys" in result.output
+        assert result.exit_code == 0
+        assert "Migrated config" in result.output
+        assert '"batch_size": 8' in result.output
 
 
 class TestStats:

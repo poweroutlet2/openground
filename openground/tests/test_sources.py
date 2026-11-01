@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from openground.console import UserError
@@ -34,3 +36,27 @@ def test_corrupt_file_raises_instead_of_being_overwritten(tmp_path):
     with pytest.raises(UserError):
         save_source("a", {"type": "local_path", "local_path": "/docs"})
     assert path.read_text() == "{oops"
+
+
+def test_legacy_sources_are_imported_once(tmp_path, capsys):
+    legacy = tmp_path / ".openground" / "sources.json"
+    legacy.parent.mkdir()
+    legacy.write_text(
+        json.dumps(
+            {
+                "fastapi": {
+                    "type": "git_repo",
+                    "repo_url": "https://github.com/tiangolo/fastapi.git",
+                    "docs_paths": ["docs"],
+                    "languages": ["python"],
+                },
+                "broken": {"type": "git_repo"},
+            }
+        )
+    )
+
+    assert set(load_sources()) == {"fastapi"}
+    assert "Imported 1 remembered sources" in capsys.readouterr().err
+
+    remove_source("fastapi")
+    assert load_sources() == {}

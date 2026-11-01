@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from openground.console import UserError
+from openground.console import UserError, warning
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 TABLE_NAME = "documents"
@@ -89,16 +89,56 @@ class Settings(BaseModel):
 
 
 _settings_cache: Settings | None = None
-LEGACY_KEYS = {
-    "embeddings",
-    "query",
-    "extraction",
-    "sources",
-    "ingestion",
-    "db_path",
-    "table_name",
-    "raw_data_dir",
-}
+LEGACY_SECTIONS = {"embeddings", "query", "extraction", "sources", "ingestion"}
+LEGACY_TOP_LEVEL = {"db_path", "table_name", "raw_data_dir"}
+
+
+def _flatten_legacy(data: dict) -> dict:
+    """Map a pre-0.15 nested config onto the flat keys, keeping only non-default values."""
+    flat = {}
+    for section in ("embeddings", "query"):
+        if isinstance(data.get(section), dict):
+            flat.update(data[section])
+    flat = {k: v for k, v in flat.items() if k in Settings.model_fields}
+    if (
+        flat.get("embedding_model", Settings.model_fields["embedding_model"].default)
+        in MODEL_DIMENSIONS
+    ):
+        flat.pop("embedding_dimensions", None)
+    return {k: v for k, v in flat.items() if v != Settings.model_fields[k].default}
+
+
+def _migrate_legacy_config(path: Path) -> None:
+    """Rewrite a pre-0.15 config file in the flat format, keeping a .bak copy."""
+    source = path
+    if not path.exists() and os.name == "nt":
+        source = get_data_home() / "config.json"  # pre-0.15 Windows location
+    try:
+        data = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict) or not (
+        LEGACY_SECTIONS & set(data) or LEGACY_TOP_LEVEL & set(data)
+    ):
+        return
+
+    backup = source.with_name("config.json.bak")
+    backup.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(_flatten_legacy(data), indent=2), encoding="utf-8")
+    if source != path:
+        source.unlink()
+    warning(f"Migrated config to the new flat format: {path} (old file: {backup})")
+    current = {"db_path": get_db_path(), "raw_data_dir": get_raw_data_dir()}
+    moved = [
+        k
+        for k, p in current.items()
+        if k in data and Path(str(data[k])).expanduser() != p
+    ]
+    if moved:
+        warning(
+            f"  {', '.join(moved)} are no longer settings; openground now uses {get_data_home()}"
+        )
 
 
 def get_settings() -> Settings:
@@ -106,17 +146,11 @@ def get_settings() -> Settings:
     global _settings_cache
     if _settings_cache is None:
         path = get_config_path()
+        _migrate_legacy_config(path)
         try:
             text = path.read_text(encoding="utf-8").strip() if path.exists() else ""
-            data = json.loads(text) if text else {}
-            if isinstance(data, dict) and (legacy := LEGACY_KEYS & set(data)):
-                problem = (
-                    f"the config format changed to flat keys (found {', '.join(sorted(legacy))}). "
-                    "Delete the file or see the README for the new format"
-                )
-            else:
-                _settings_cache = Settings.model_validate(data)
-                return _settings_cache
+            _settings_cache = Settings.model_validate(json.loads(text) if text else {})
+            return _settings_cache
         except json.JSONDecodeError as e:
             problem = f"invalid JSON ({e})"
         except ValidationError as e:

@@ -61,7 +61,7 @@ def test_unknown_model_requires_dimensions():
     [
         "{not json",
         {"chunk_sze": 1},
-        {"embeddings": {"batch_size": 1}},
+        {"embeddings": {"batch_size": 0}},
         {"top_k": "many"},
     ],
 )
@@ -76,19 +76,47 @@ def test_empty_config_file_uses_defaults():
     assert get_settings().top_k == 5
 
 
-@pytest.mark.parametrize(
-    "legacy",
-    [
-        {"embeddings": {"batch_size": 1}},
-        {"db_path": "/x"},
-        {"table_name": "t"},
-        {"sources": {}},
-    ],
-)
-def test_legacy_config_gets_actionable_message(legacy):
-    write_config(legacy)
-    with pytest.raises(UserError, match="format changed to flat keys"):
-        get_settings()
+OLD_DEFAULTS = {
+    "db_path": "~/.local/share/openground/lancedb",
+    "table_name": "documents",
+    "raw_data_dir": "~/.local/share/openground/raw_data",
+    "extraction": {"concurrency_limit": 50},
+    "embeddings": {
+        "batch_size": 32,
+        "chunk_size": 800,
+        "chunk_overlap": 200,
+        "embedding_model": "BAAI/bge-small-en-v1.5",
+        "embedding_dimensions": 384,
+        "embedding_backend": "fastembed",
+    },
+    "query": {"top_k": 7},
+    "sources": {"auto_add_local": True},
+}
+
+
+def test_legacy_config_is_migrated_to_flat_keys(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / ".local" / "share"))
+    write_config(OLD_DEFAULTS)
+
+    settings = get_settings()
+
+    assert settings.embedding_backend == "fastembed"
+    assert settings.top_k == 7
+    assert json.loads(get_config_path().read_text()) == {
+        "embedding_backend": "fastembed",
+        "top_k": 7,
+    }
+    assert json.loads(get_config_path().with_name("config.json.bak").read_text()) == (
+        OLD_DEFAULTS
+    )
+    err = capsys.readouterr().err
+    assert "Migrated config" in err and "no longer settings" not in err
+
+
+def test_legacy_custom_data_paths_are_reported(capsys):
+    write_config({"db_path": "/somewhere/else", "embeddings": "garbage"})
+    assert get_settings().embedding_backend == "sentence-transformers"
+    assert "db_path are no longer settings" in capsys.readouterr().err
 
 
 def test_sources_path_sits_next_to_config():

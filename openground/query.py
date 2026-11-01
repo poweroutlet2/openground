@@ -34,7 +34,7 @@ def _match(library_name: str, version: str) -> str:
 
 
 def check_embedding_config() -> None:
-    """Fail if the stored embeddings were made with a different backend/model than configured."""
+    """Match settings to the stored embeddings, or fail if the config explicitly conflicts."""
     table = _get_table()
     if table is None or not table.schema.metadata:
         return
@@ -46,16 +46,24 @@ def check_embedding_config() -> None:
         for k, v in table.schema.metadata.items()
     }
     settings = get_settings()
+    stored_pair = (stored.get("embedding_backend"), stored.get("embedding_model"))
     current = (settings.embedding_backend, settings.embedding_model)
-    if (stored.get("embedding_backend"), stored.get("embedding_model")) != current:
-        raise UserError(
-            "Embedding config mismatch.\n"
-            f"  Stored:  {stored.get('embedding_backend')} / {stored.get('embedding_model')}\n"
-            f"  Config:  {current[0]} / {current[1]}\n"
-            "Set embedding_backend and embedding_model in config.json to the stored "
-            "values (see `openground config`), or run `openground reset` and re-add "
-            "your libraries."
-        )
+    if stored_pair == current or None in stored_pair:
+        return
+
+    # The database remembers its model, so it wins unless the user chose one explicitly.
+    if not {"embedding_backend", "embedding_model"} & settings.model_fields_set:
+        settings.embedding_backend, settings.embedding_model = stored_pair
+        settings.embedding_dimensions = table.schema.field("vector").type.list_size
+        return
+
+    raise UserError(
+        "Embedding config mismatch.\n"
+        f"  Stored:  {stored_pair[0]} / {stored_pair[1]}\n"
+        f"  Config:  {current[0]} / {current[1]}\n"
+        "Remove embedding_backend and embedding_model from config.json to use the "
+        "stored values, or run `openground reset` and re-add your libraries."
+    )
 
 
 def check_library_version(library_name: str | None, version: str | None) -> None:
