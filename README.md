@@ -110,13 +110,15 @@ Defaults work out of the box. To change them, create `config.json` in the config
 
 `embedding_backend` is `sentence-transformers` or `fastembed`. `embedding_dimensions` can be omitted (or `0`) for the common bge and MiniLM models, where it is filled in automatically and a different value is rejected; set it yourself for any other model. Unknown keys are rejected, `chunk_size`, `batch_size` and `top_k` must be positive, and `chunk_overlap` (may be `0`) must be smaller than `chunk_size`. Delete the file to reset.
 
-Embeddings are tied to the backend and model they were made with. If you change them after libraries are stored, openground refuses to add or search until you restore the old values or run `openground reset` and re-add your libraries. Data lives in `$XDG_DATA_HOME/openground` or `~/.local/share/openground` (`%USERPROFILE%\AppData\Local\openground` on Windows); run `openground config` to see all paths.
+The database remembers the backend and model its embeddings were made with, and openground uses them automatically unless `config.json` sets `embedding_backend` or `embedding_model`. If those explicitly disagree with the stored ones, `add` and `search` refuse to run until you remove them or run `openground reset` and re-add your libraries. Data lives in `$XDG_DATA_HOME/openground` or `~/.local/share/openground` (`%USERPROFILE%\AppData\Local\openground` on Windows); run `openground config` to see all paths.
 
 ## Upgrading from 0.14
 
-- **Config is flat.** The old nested `config.json` (`embeddings`, `query`, `extraction`, `sources`, `db_path`, `table_name`, ...) is rejected with an error. Delete it (or rewrite it in the flat format above); `db_path`, `raw_data_dir` and `table_name` are no longer settings.
-- **One sources file.** Sources live in `sources.json` next to `config.json`, one source per library. `~/.openground/sources.json`, project-level `.openground/sources.json`, `--sources-file` and the bundled catalog are gone; copy any entries you want to keep. On Windows the config directory moved from `Local` to `Roaming` AppData.
-- **Default backend is `sentence-transformers`** (it was `fastembed`). If your existing libraries were embedded with fastembed, either set `"embedding_backend": "fastembed"` in `config.json` or run `openground reset` and re-add them.
+Your existing setup is migrated automatically, with a notice, the first time openground needs it:
+
+- **Config** is rewritten in the flat format; the old file is kept as `config.json.bak`. `db_path`, `raw_data_dir` and `table_name` are no longer settings (you get a notice if you had customized a path). On Windows the config moves from `Local` to `Roaming` AppData.
+- **Remembered sources** from `~/.openground/sources.json` are imported into the new `sources.json`. Project-level `.openground/sources.json`, `--sources-file` and the bundled catalog are gone.
+- **Existing embeddings keep working.** The default backend for new databases is now `sentence-transformers`, but an existing database keeps using the backend and model it was built with.
 - **Commands changed.** `extract-*`, `embed`, `query`, `list-libraries`, `remove`, `nuke`, `config set|get|show|reset` and `stats show|clear` are replaced by the commands above. Local directories are now stored under the version `latest`.
 
 ## Claude Code Agent
