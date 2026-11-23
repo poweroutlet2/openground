@@ -141,27 +141,36 @@ def _migrate_legacy_config(path: Path) -> None:
         )
 
 
+def read_settings() -> Settings:
+    """Read the current settings without modifying the process cache."""
+    path = get_config_path()
+    try:
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError:
+            text = ""
+        return Settings.model_validate(json.loads(text) if text else {})
+    except json.JSONDecodeError as e:
+        problem = f"invalid JSON ({e})"
+    except ValidationError as e:
+        problem = "; ".join(
+            f"{'.'.join(map(str, err['loc'])) or 'config'}: {err['msg']}"
+            for err in e.errors()
+        )
+    except (OSError, UnicodeError) as e:
+        problem = str(e)
+    raise UserError(
+        f"Invalid config file {path}: {problem}\n"
+        "Fix it or delete the file to reset to defaults."
+    )
+
+
 def get_settings() -> Settings:
     """Load settings from the config file (cached for the process)."""
     global _settings_cache
     if _settings_cache is None:
-        path = get_config_path()
-        _migrate_legacy_config(path)
-        try:
-            text = path.read_text(encoding="utf-8").strip() if path.exists() else ""
-            _settings_cache = Settings.model_validate(json.loads(text) if text else {})
-            return _settings_cache
-        except json.JSONDecodeError as e:
-            problem = f"invalid JSON ({e})"
-        except ValidationError as e:
-            problem = "; ".join(
-                f"{'.'.join(map(str, err['loc'])) or 'config'}: {err['msg']}"
-                for err in e.errors()
-            )
-        raise UserError(
-            f"Invalid config file {path}: {problem}\n"
-            "Fix it or delete the file to reset to defaults."
-        )
+        _migrate_legacy_config(get_config_path())
+        _settings_cache = read_settings()
     return _settings_cache
 
 
