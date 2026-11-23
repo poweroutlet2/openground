@@ -1,6 +1,6 @@
 [project]
 name = "openground"
-version = "0.15.0"
+version = "0.16.0"
 description = "Ingest official documentation into a local vector database and expose it via MCP for AI coding agents"
 readme = "README.md"
 license = "MIT"
@@ -69,7 +69,7 @@ Issues = "https://github.com/poweroutlet2/openground/issues"
 
 [project.scripts]
 openground = "openground.cli:app"
-openground-mcp = "openground.server:run_server"
+openground-mcp = "openground.mcp_cli:main"
 
 [build-system]
 requires = ["hatchling"]

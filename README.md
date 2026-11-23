@@ -92,6 +92,88 @@ openground install-mcp               # print JSON for any other client
 
 Then ask your agent something like "What models are available in fastembed?" and it will search your local docs.
 
+#### Share one MCP server over HTTP
+
+Run one server for all local agent sessions. The server loads the embedding model
+on the first semantic search. Both `openground-mcp` and `openground serve` default to stdio.
+
+```bash
+openground-mcp --transport http
+```
+
+The endpoint is `http://127.0.0.1:8765/mcp`. Use `--host` and `--port` to
+override the bind address and port. The endpoint is unauthenticated, so keep it on
+loopback for local use.
+
+For a persistent server on Linux, save this as
+`~/.config/systemd/user/openground-mcp.service`. Set `ExecStart` to the
+absolute path reported by `command -v openground-mcp` if it differs from the example.
+
+```ini
+[Unit]
+Description=OpenGround MCP server
+
+[Service]
+ExecStart=%h/.local/bin/openground-mcp --transport http
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now openground-mcp.service
+```
+
+For Claude Code, replace the existing user-scoped stdio entry if you used
+`openground install-mcp claude-code`. If you registered it at another scope,
+use that scope for both commands.
+
+```bash
+claude mcp remove openground --scope user
+claude mcp add --transport http --scope user openground http://127.0.0.1:8765/mcp
+```
+
+For OpenCode v2, replace the `openground` entry under `mcp.servers` in
+`~/.config/opencode/opencode.json` (or your project config).
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "openground": {
+        "type": "remote",
+        "url": "http://127.0.0.1:8765/mcp"
+      }
+    }
+  }
+}
+```
+
+For OpenCode v1, put the entry directly under `mcp` and allow extra time for the
+first search to load or download the model.
+
+```json
+{
+  "mcp": {
+    "openground": {
+      "type": "remote",
+      "url": "http://127.0.0.1:8765/mcp",
+      "enabled": true,
+      "timeout": 120000
+    }
+  }
+}
+```
+
+Both transports default to one math thread per library and disable tokenizer
+parallelism. Set `OPENGROUND_MATH_THREADS=2` in the server environment to raise
+the default, including FastEmbed's ONNX Runtime thread count. Existing
+`OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, and
+`TOKENIZERS_PARALLELISM` settings take precedence for their respective libraries.
+For a systemd service, add `Environment=OPENGROUND_MATH_THREADS=2` under `[Service]`.
+
 ## Configuration
 
 Defaults work out of the box. To change them, create `config.json` in the config directory: `$XDG_CONFIG_HOME/openground` if set, otherwise `~/.config/openground` (Linux/macOS) or `%USERPROFILE%\AppData\Roaming\openground` (Windows). Every key is optional:

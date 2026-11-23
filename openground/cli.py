@@ -187,6 +187,10 @@ def search(
 @_handle_errors
 def serve():
     """Run the MCP server on stdio (same as `openground-mcp`)."""
+    from openground.mcp_cli import configure_thread_env
+
+    configure_thread_env()
+
     from openground.server import run_server
 
     run_server()

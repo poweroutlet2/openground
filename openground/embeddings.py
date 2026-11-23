@@ -4,6 +4,7 @@ import sys
 from collections.abc import Iterable
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
+from threading import Lock
 
 from tqdm import tqdm
 
@@ -11,9 +12,16 @@ from openground.config import get_settings
 from openground.console import error, hint, warning
 
 
-@lru_cache(maxsize=1)
+_model_lock = Lock()
+
+
 def get_st_model(model_name: str):
-    """Get a cached instance of SentenceTransformer."""
+    with _model_lock:
+        return _load_st_model(model_name)
+
+
+@lru_cache(maxsize=1)
+def _load_st_model(model_name: str):
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError:
@@ -92,9 +100,13 @@ def check_gpu_compatibility() -> None:
         )
 
 
-@lru_cache(maxsize=1)
 def get_fastembed_model(model_name: str, use_cuda: bool = True):
-    """Get a cached instance of TextEmbedding (fastembed)."""
+    with _model_lock:
+        return _load_fastembed_model(model_name, use_cuda)
+
+
+@lru_cache(maxsize=1)
+def _load_fastembed_model(model_name: str, use_cuda: bool):
     try:
         from fastembed import TextEmbedding
     except ImportError:
@@ -103,10 +115,13 @@ def get_fastembed_model(model_name: str, use_cuda: bool = True):
             "Please install it with: pip install fastembed"
         ) from None
 
+    thread_limit = os.environ.get("OPENGROUND_MATH_THREADS")
+    threads = int(thread_limit) if thread_limit is not None else None
     if use_cuda:
         try:
             return TextEmbedding(
                 model_name=model_name,
+                threads=threads,
                 providers=["CUDAExecutionProvider"],
             )
         except ValueError:
@@ -114,6 +129,7 @@ def get_fastembed_model(model_name: str, use_cuda: bool = True):
 
     return TextEmbedding(
         model_name=model_name,
+        threads=threads,
         providers=["CPUExecutionProvider"],
     )
 
