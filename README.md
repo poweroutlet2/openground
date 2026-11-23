@@ -103,7 +103,9 @@ openground-mcp --transport http
 
 The endpoint is `http://127.0.0.1:8765/mcp`. Use `--host` and `--port` to
 override the bind address and port. The endpoint is unauthenticated, so keep it on
-loopback for local use.
+loopback for local use. Requests must use a loopback address or the specific
+address passed to `--host`, with the configured port. Browser requests must also
+come from one of those HTTP origins.
 
 For a persistent server on Linux, save this as
 `~/.config/systemd/user/openground-mcp.service`. Set `ExecStart` to the
@@ -197,6 +199,8 @@ Defaults work out of the box. To change them, create `config.json` in the config
 `embedding_backend` is `sentence-transformers` or `fastembed`. `embedding_dimensions` can be omitted (or `0`) for the common bge and MiniLM models, where it is filled in automatically and a different value is rejected; set it yourself for any other model. Unknown keys are rejected, `chunk_size`, `batch_size` and `top_k` must be positive, and `chunk_overlap` (may be `0`) must be smaller than `chunk_size`. Delete the file to reset.
 
 The database remembers the backend and model its embeddings were made with, and openground uses them automatically unless `config.json` sets `embedding_backend` or `embedding_model`. If those explicitly disagree with the stored ones, `add` and `search` refuse to run until you remove them or run `openground reset` and re-add your libraries. Data lives in `$XDG_DATA_HOME/openground` or `~/.local/share/openground` (`%USERPROFILE%\AppData\Local\openground` on Windows); run `openground config` to see all paths.
+
+Each MCP search reads the current config file, so settings changes take effect without restarting the server.
 
 ## Upgrading from 0.14
 

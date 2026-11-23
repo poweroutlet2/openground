@@ -33,9 +33,13 @@ def _match(library_name: str, version: str) -> str:
     )
 
 
-def check_embedding_config(table: Optional["lancedb.table.Table"] = None) -> Settings:
+def check_embedding_config(
+    table: Optional["lancedb.table.Table"] = None,
+    *,
+    settings: Settings | None = None,
+) -> Settings:
     """Resolve a settings snapshot for the table's embeddings."""
-    settings = get_settings().model_copy()
+    settings = (settings if settings is not None else get_settings()).model_copy()
     if table is None:
         table = _get_table()
     if table is None or not table.schema.metadata:
@@ -96,6 +100,8 @@ def search(
     library_name: Optional[str] = None,
     top_k: Optional[int] = None,
     show_progress: bool = True,
+    *,
+    settings: Settings | None = None,
 ) -> str:
     """Hybrid (semantic + BM25) search; returns a markdown summary of the matches."""
     check_library_version(library_name, version)
@@ -103,7 +109,7 @@ def search(
     if table is None:
         return "Found 0 matches."
 
-    settings = check_embedding_config(table)
+    settings = check_embedding_config(table, settings=settings)
     query_vec = generate_embeddings(
         [query], show_progress=show_progress, settings=settings
     )[0]

@@ -26,7 +26,7 @@ from openground import embeddings, mcp_cli
     ],
 )
 def test_mcp_transport(args, expected, monkeypatch):
-    from openground.server import mcp
+    from openground.server import MCPRequestValidation, mcp
 
     run = Mock()
     monkeypatch.setattr(mcp, "run", run)
@@ -36,8 +36,105 @@ def test_mcp_transport(args, expected, monkeypatch):
 
     mcp_cli.main(args)
 
-    run.assert_called_once_with(**expected)
+    run.assert_called_once()
+    kwargs = run.call_args.kwargs
+    if expected["transport"] == "http":
+        (middleware,) = kwargs.pop("middleware")
+        assert middleware.cls is MCPRequestValidation
+        assert middleware.kwargs == {"host": expected["host"], "port": expected["port"]}
+    assert kwargs == expected
     model.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("host", "headers", "status"),
+    [
+        ("127.0.0.1", {"Host": "127.0.0.1:8765"}, 200),
+        ("::1", {"Host": "[::1]:8765", "Origin": "http://[::1]:8765"}, 200),
+        (
+            "192.0.2.10",
+            {"Host": "192.0.2.10:8765", "Origin": "http://192.0.2.10:8765"},
+            200,
+        ),
+        ("127.0.0.1", {"Host": "invalid.example:8765"}, 421),
+        ("127.0.0.1", {"Host": "localhost:9876"}, 421),
+        ("0.0.0.0", {"Host": "0.0.0.0:8765"}, 421),
+        ("127.0.0.1", {"Host": "localhost:8765", "Origin": "null"}, 403),
+        (
+            "127.0.0.1",
+            {"Host": "localhost:8765", "Origin": "https://invalid.example"},
+            403,
+        ),
+    ],
+)
+async def test_http_request_validation(host, headers, status, monkeypatch):
+    from httpx import ASGITransport, AsyncClient
+
+    from openground.server import mcp, run_server
+
+    run = Mock()
+    monkeypatch.setattr(mcp, "run", run)
+    run_server(transport="http", host=host)
+    app = mcp.http_app(
+        path="/mcp", middleware=run.call_args.kwargs["middleware"], json_response=True
+    )
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://localhost:8765"
+        ) as client,
+    ):
+        response = await client.post(
+            "/mcp",
+            headers={**headers, "Accept": "application/json, text/event-stream"},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "1"},
+                },
+            },
+        )
+    assert response.status_code == status
+    assert ("mcp-session-id" in response.headers) == (status == 200)
+
+
+@pytest.mark.asyncio
+async def test_mcp_search_sees_config_edits_without_restart(fake_source):
+    from fastmcp import Client
+
+    from openground.config import get_config_path, get_settings
+    from openground.server import mcp
+    from openground.service import add_library
+    from openground.tests.test_config import write_config
+
+    await asyncio.to_thread(
+        add_library, "lib", "https://github.com/example/example.git"
+    )
+    write_config({"embedding_model": "sentence-transformers/all-MiniLM-L6-v2"})
+    cached = get_settings()
+    path = get_config_path()
+    args = {"query": "page", "library_name": "lib", "version": "latest"}
+    async with Client(mcp) as client:
+        result = await client.call_tool("search_documents_tool", args)
+        assert "Embedding config mismatch" in result.content[0].text
+
+        path.write_text("{", encoding="utf-8")
+        result = await client.call_tool("search_documents_tool", args)
+        assert "Invalid config file" in result.content[0].text
+
+        path.write_text('{"top_k": 1}', encoding="utf-8")
+        result = await client.call_tool("search_documents_tool", args)
+        assert result.content[0].text.startswith("Found 1 match.")
+
+        path.unlink()
+        result = await client.call_tool("search_documents_tool", args)
+        assert result.content[0].text.startswith("Found 2 matches.")
+    assert get_settings() is cached
 
 
 @pytest.mark.parametrize("args", [["--transport", "sse"], ["--port", "65536"]])

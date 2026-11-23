@@ -2,8 +2,12 @@ import asyncio
 import sys
 
 from fastmcp import FastMCP
+from starlette.datastructures import Headers
+from starlette.middleware import Middleware
+from starlette.responses import PlainTextResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
-from openground.config import get_settings
+from openground.config import get_settings, read_settings
 from openground.console import UserError
 from openground.mcp_cli import DEFAULT_HOST, DEFAULT_PORT
 from openground.query import (
@@ -26,6 +30,50 @@ mcp = FastMCP(
 )
 
 
+class MCPRequestValidation:
+    """Validate HTTP authorities and browser origins before opening MCP sessions."""
+
+    def __init__(self, app: ASGIApp, host: str, port: int):
+        self.app = app
+        host = host.lower()
+        hosts = {"localhost", "127.0.0.1", "[::1]"}
+        if host not in {"0.0.0.0", "::"}:
+            hosts.add(f"[{host}]" if ":" in host else host)
+        self.allowed_hosts = {f"{name}:{port}" for name in hosts}
+        if port == 80:
+            self.allowed_hosts.update(hosts)
+        self.allowed_origins = {f"http://{name}" for name in self.allowed_hosts}
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            headers = Headers(scope=scope)
+            origins = headers.getlist("origin")
+            if origins and (
+                len(origins) != 1 or origins[0] not in self.allowed_origins
+            ):
+                await PlainTextResponse("Invalid Origin header", status_code=403)(
+                    scope, receive, send
+                )
+                return
+            hosts = headers.getlist("host")
+            if len(hosts) != 1 or hosts[0].lower() not in self.allowed_hosts:
+                await PlainTextResponse("Invalid Host header", status_code=421)(
+                    scope, receive, send
+                )
+                return
+        await self.app(scope, receive, send)
+
+
+def _search_documents(query: str, library_name: str, version: str) -> str:
+    return search(
+        query,
+        version=version,
+        library_name=library_name,
+        show_progress=False,
+        settings=read_settings(),
+    )
+
+
 @mcp.tool
 async def search_documents_tool(
     query: str,
@@ -43,13 +91,7 @@ async def search_documents_tool(
     """
     increment_tool_call("search_documents_tool")
     try:
-        return await asyncio.to_thread(
-            search,
-            query,
-            version=version,
-            library_name=library_name,
-            show_progress=False,
-        )
+        return await asyncio.to_thread(_search_documents, query, library_name, version)
     except UserError as e:
         return str(e)
 
@@ -90,7 +132,13 @@ def run_server(
         sys.exit(f"[error] {e}")
 
     if transport == "http":
-        mcp.run(transport="http", host=host, port=port, path="/mcp")
+        mcp.run(
+            transport="http",
+            host=host,
+            port=port,
+            path="/mcp",
+            middleware=[Middleware(MCPRequestValidation, host=host, port=port)],
+        )
     else:
         mcp.run(transport="stdio")
 
