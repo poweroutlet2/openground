@@ -8,16 +8,12 @@ from aiohttp import ClientSession, ClientTimeout
 from xml.etree import ElementTree as ET
 from tqdm.asyncio import tqdm as async_tqdm
 
-from openground.config import (
-    CONCURRENCY_LIMIT,
-    DEFAULT_LIBRARY_NAME,
-    SITEMAP_URL,
-    get_library_raw_data_dir,
-)
-
 import trafilatura
 
+from openground.console import UserError
 from openground.extract.common import ParsedPage, save_results
+
+CONCURRENCY_LIMIT = 50
 
 
 async def fetch_sitemap_urls(
@@ -27,10 +23,15 @@ async def fetch_sitemap_urls(
 ) -> set[str]:
     print(f"Getting sitemap: {url}")
 
-    async with session.get(url) as response:
-        content = await response.text()
-
-    root = ET.fromstring(content)
+    try:
+        async with session.get(url) as response:
+            response.raise_for_status()
+            content = await response.text()
+        root = ET.fromstring(content)
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        raise UserError(f"Could not fetch sitemap {url}: {e}") from e
+    except ET.ParseError as e:
+        raise UserError(f"{url} is not a valid sitemap XML: {e}") from e
     namespace = {"ns": "http://www.sitemaps.org/schemas/sitemap/0.9"}
 
     urls = {
@@ -85,17 +86,7 @@ async def process_url(
     library_name: str,
     version: str,
 ) -> ParsedPage | None:
-    """
-    Process a single URL.
-
-    Args:
-        semaphore: The semaphore to use to limit the number of concurrent requests.
-        session: The session to use to make the request.
-        url: The URL to process.
-        library_name: The name of the library/framework for this documentation.
-        version: The version string to store in the parsed page.
-    """
-
+    """Fetch and parse one page; returns None on any failure."""
     async with semaphore:
         try:
             async with session.get(url, timeout=ClientTimeout(total=10)) as response:
@@ -119,16 +110,7 @@ async def process_url(
 def parse_html(
     url: str, html: str, last_modified: str, library_name: str, version: str
 ) -> ParsedPage | None:
-    """
-    Parse the HTML of a page.
-
-    Args:
-        url: The URL of the page.
-        html: The HTML of the page.
-        last_modified: The Last-Modified header value.
-        library_name: The name of the library/framework for this documentation.
-        version: The version string to store in the parsed page.
-    """
+    """Extract markdown content and metadata from a page's HTML."""
     metadata = trafilatura.extract_metadata(html)
     content = trafilatura.extract(
         html,
@@ -168,33 +150,16 @@ def parse_html(
 
 
 async def extract_pages(
-    sitemap_url: str = SITEMAP_URL,
-    concurrency_limit: int = CONCURRENCY_LIMIT,
-    library_name: str = DEFAULT_LIBRARY_NAME,
-    output_dir: Path | None = None,
-    filter_keywords: list[str] = [],
+    sitemap_url: str,
+    library_name: str,
+    output_dir: Path,
+    filter_keywords: list[str] | None = None,
     version: str = "latest",
-    trim_query_params: bool = False,
 ) -> None:
-    if output_dir is None:
-        output_dir = get_library_raw_data_dir(library_name, version=version)
     connector = aiohttp.TCPConnector()
 
     async with aiohttp.ClientSession(connector=connector) as session:
-        urls = await fetch_sitemap_urls(session, sitemap_url, filter_keywords)
-
-        if trim_query_params:
-            original_count = len(urls)
-            # Trim query parameters and deduplicate using a set comprehension
-            urls = {
-                f"{p.scheme}://{p.netloc}{p.path}"
-                for url in urls
-                if (p := urlparse(url))
-            }
-            if len(urls) < original_count:
-                print(
-                    f"Trimmed query parameters: {original_count} -> {len(urls)} unique URLs"
-                )
+        urls = await fetch_sitemap_urls(session, sitemap_url, filter_keywords or [])
 
         # Filter by robots.txt
         parsed = urlparse(sitemap_url)
@@ -204,7 +169,7 @@ async def extract_pages(
         urls = filter_urls_by_robots(urls, robot_parser)
         print(f"Filtered to {len(urls)} URLs after robots.txt check")
 
-        semaphore = asyncio.Semaphore(concurrency_limit)
+        semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
         tasks = [
             process_url(semaphore, session, url, library_name, version) for url in urls

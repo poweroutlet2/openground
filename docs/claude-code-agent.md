@@ -15,7 +15,7 @@ The `openground-docs-search` agent is a specialized subagent that:
 ### Step 1: Ensure Openground MCP is Installed
 
 ```bash
-openground install-mcp --claude-code
+openground install-mcp claude-code
 ```
 
 ### Step 2: Install the Agent
@@ -90,17 +90,17 @@ Make sure the agent file is in the correct location:
 
 1. Verify openground has documentation installed:
    ```bash
-   openground list
+   openground ls
    ```
 
 2. Add documentation if needed:
    ```bash
-   openground add library-name --source https://github.com/example/example.git --docs-path docs/ --version v1.0.0 -y
+   openground add library-name https://github.com/example/example.git -d docs -v v1.0.0
    ```
 
 ### MCP tools not available
 
 Ensure openground MCP server is installed:
 ```bash
-openground install-mcp --claude-code
+openground install-mcp claude-code
 ```

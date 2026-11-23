@@ -5,6 +5,10 @@ from rich.console import Console
 _console = Console(stderr=True)
 
 
+class UserError(Exception):
+    """A failure to report to the user as a message (no traceback)."""
+
+
 def success(message: str) -> None:
     """Print a success message in green."""
     _console.print(message, style="green", markup=False)
@@ -23,8 +27,3 @@ def hint(message: str) -> None:
 def warning(message: str) -> None:
     """Print a warning message in yellow."""
     _console.print(message, style="yellow", markup=False)
-
-
-def print(message: str) -> None:
-    """Print a message."""
-    _console.print(message, markup=False)
