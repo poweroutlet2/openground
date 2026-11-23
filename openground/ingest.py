@@ -9,6 +9,7 @@ from tqdm import tqdm
 from openground.config import TABLE_NAME, get_db_path, get_settings
 from openground.embeddings import generate_embeddings
 from openground.extract.common import ParsedPage
+from openground.query import check_embedding_config
 
 
 def load_parsed_pages(directory: Path) -> list[ParsedPage]:
@@ -89,6 +90,7 @@ def ingest_pages(pages: list[ParsedPage]) -> None:
 
     db = lancedb.connect(str(get_db_path()))
     table = ensure_table(db)
+    settings = check_embedding_config(table)
 
     all_records = []
     for page in tqdm(pages, desc="Chunking documents", unit="page"):
@@ -98,7 +100,9 @@ def ingest_pages(pages: list[ParsedPage]) -> None:
         print("No chunks produced; skipping ingestion.")
         return
 
-    embeddings = generate_embeddings([rec["content"] for rec in all_records])
+    embeddings = generate_embeddings(
+        [rec["content"] for rec in all_records], settings=settings
+    )
     for rec, emb in zip(all_records, embeddings):
         rec["vector"] = emb
 

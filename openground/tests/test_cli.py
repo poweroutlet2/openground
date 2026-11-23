@@ -412,9 +412,24 @@ def test_serve_reports_invalid_config_without_traceback():
     assert "Invalid config file" in result.output
 
 
-def test_serve_runs_the_mcp_server(monkeypatch):
-    called = []
-    monkeypatch.setattr("openground.server.run_server", lambda: called.append(True))
+@pytest.mark.parametrize(
+    ("options", "transport", "host", "port"),
+    [
+        ([], "stdio", "127.0.0.1", 8765),
+        (
+            ["--transport", "http", "--host", "::1", "--port", "9000"],
+            "http",
+            "::1",
+            9000,
+        ),
+    ],
+)
+def test_serve_runs_the_mcp_server(monkeypatch, options, transport, host, port):
+    from unittest.mock import Mock
 
-    assert invoke("serve").exit_code == 0
-    assert called
+    run = Mock()
+    monkeypatch.setattr("openground.mcp_cli.configure_thread_env", Mock())
+    monkeypatch.setattr("openground.server.run_server", run)
+
+    assert invoke("serve", *options).exit_code == 0
+    run.assert_called_once_with(transport=transport, host=host, port=port)

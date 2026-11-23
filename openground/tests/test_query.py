@@ -98,10 +98,38 @@ class TestEmbeddingConfig:
         add_library("lib", GIT)
         write_config({})
 
-        check_embedding_config()
-
-        assert get_settings().embedding_backend == "fastembed"
+        assert check_embedding_config().embedding_backend == "fastembed"
+        assert get_settings().embedding_backend == "sentence-transformers"
         assert "Found" in search("page")
+
+    def test_search_keeps_resolved_model_when_settings_cache_changes(
+        self, fake_source, monkeypatch
+    ):
+        from unittest.mock import Mock
+
+        from openground import config, embeddings, query
+
+        stored_model = "sentence-transformers/all-MiniLM-L6-v2"
+        write_config({"embedding_model": stored_model})
+        add_library("lib", GIT)
+        write_config({})
+
+        model = Mock()
+        model.encode.return_value = [[0.1] * 384]
+        load_model = Mock(return_value=model)
+        monkeypatch.setattr(embeddings, "get_st_model", load_model)
+        replacement = config.Settings(embedding_backend="fastembed")
+
+        def embed(texts, *, show_progress, settings):
+            monkeypatch.setattr(config, "_settings_cache", replacement)
+            return embeddings.generate_embeddings(
+                texts, show_progress=show_progress, settings=settings
+            )
+
+        monkeypatch.setattr(query, "generate_embeddings", embed)
+        assert "Found" in search("guide")
+        load_model.assert_called_once_with(stored_model)
+        assert get_settings() is replacement
 
     def test_search_refuses_mismatched_model(self, two_versions):
         write_config({"embedding_backend": "fastembed"})

@@ -1,17 +1,11 @@
-import os
+import asyncio
 import sys
-import threading
-import time
-
-# Silence stdout pollution from dependencies
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["TRANSFORMERS_VERBOSITY"] = "error"
-os.environ["FAST_EMBED_IGNORE_TRANSFORMERS_LOGS"] = "1"
 
 from fastmcp import FastMCP
 
 from openground.config import get_settings
 from openground.console import UserError
+from openground.mcp_cli import DEFAULT_HOST, DEFAULT_PORT
 from openground.query import (
     FULL_CONTENT_TOOL,
     get_full_content,
@@ -32,26 +26,8 @@ mcp = FastMCP(
 )
 
 
-def _pre_load_resources():
-    """Load the embedding model in the background so the first search is fast."""
-    start_time = time.time()
-    sys.stderr.write("[info] Background initialization started...\n")
-    try:
-        from openground.embeddings import generate_embeddings
-
-        generate_embeddings(["warmup"], show_progress=False)
-
-        duration = time.time() - start_time
-        sys.stderr.write(
-            f"[info] Background initialization complete (took {duration:.2f}s). Server is fully ready.\n"
-        )
-    except Exception as e:
-        # Background tasks should never crash the server
-        sys.stderr.write(f"[error] Background initialization failed: {e}\n")
-
-
 @mcp.tool
-def search_documents_tool(
+async def search_documents_tool(
     query: str,
     library_name: str,
     version: str,
@@ -67,8 +43,9 @@ def search_documents_tool(
     """
     increment_tool_call("search_documents_tool")
     try:
-        return search(
-            query=query,
+        return await asyncio.to_thread(
+            search,
+            query,
             version=version,
             library_name=library_name,
             show_progress=False,
@@ -103,17 +80,22 @@ def get_full_content_tool(url: str, version: str) -> str:
     return get_full_content(url=url, version=version)
 
 
-def run_server():
+def run_server(
+    transport: str = "stdio", host: str = DEFAULT_HOST, port: int = DEFAULT_PORT
+):
     """Entry point for the MCP server."""
     try:
         get_settings()
     except UserError as e:
         sys.exit(f"[error] {e}")
 
-    threading.Thread(target=_pre_load_resources, daemon=True).start()
-
-    mcp.run(transport="stdio")
+    if transport == "http":
+        mcp.run(transport="http", host=host, port=port, path="/mcp")
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
-    run_server()
+    from openground.mcp_cli import main
+
+    main()

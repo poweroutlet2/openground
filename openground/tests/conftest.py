@@ -73,7 +73,7 @@ def sample_pages():
 def fake_embeddings(monkeypatch):
     """Replace the embedding model with constant vectors."""
 
-    def embed(texts, show_progress=True):
+    def embed(texts, show_progress=True, *, settings=None):
         return [[0.1] * 384 for _ in texts]
 
     monkeypatch.setattr("openground.ingest.generate_embeddings", embed)
