@@ -5,6 +5,7 @@ import typer
 
 from openground.console import UserError, error, success, warning
 from openground.install import Client
+from openground.mcp_cli import DEFAULT_HOST, DEFAULT_PORT, Transport, start_server
 
 if TYPE_CHECKING:
     from openground.service import SyncResult
@@ -185,15 +186,13 @@ def search(
 
 @app.command()
 @_handle_errors
-def serve():
-    """Run the MCP server on stdio (same as `openground-mcp`)."""
-    from openground.mcp_cli import configure_thread_env
-
-    configure_thread_env()
-
-    from openground.server import run_server
-
-    run_server()
+def serve(
+    transport: Transport = typer.Option(Transport.STDIO, help="MCP transport"),
+    host: str = typer.Option(DEFAULT_HOST, help="HTTP bind address"),
+    port: int = typer.Option(DEFAULT_PORT, min=1, max=65535, help="HTTP bind port"),
+):
+    """Run the MCP server (same as `openground-mcp`)."""
+    start_server(transport.value, host, port)
 
 
 @app.command("install-mcp")
@@ -241,7 +240,7 @@ def config():
     from openground.query import check_embedding_config
 
     try:
-        check_embedding_config()
+        settings = check_embedding_config()
     except UserError as e:
         warning(str(e))
     typer.echo(settings.model_dump_json(indent=2))

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -68,6 +69,8 @@ def test_thread_env_defaults(limit, monkeypatch):
     assert os.environ["MKL_NUM_THREADS"] == (limit or "1")
     assert os.environ["OPENBLAS_NUM_THREADS"] == (limit or "1")
     assert os.environ["TOKENIZERS_PARALLELISM"] == "false"
+    assert os.environ["TRANSFORMERS_VERBOSITY"] == "error"
+    assert os.environ["FAST_EMBED_IGNORE_TRANSFORMERS_LOGS"] == "1"
 
 
 def test_thread_env_preserves_overrides(monkeypatch):
@@ -138,3 +141,48 @@ def test_concurrent_first_model_load(backend, monkeypatch):
             )
     finally:
         cache.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_searches_share_a_loaded_model_without_serializing(
+    fake_source, monkeypatch
+):
+    from fastmcp import Client
+
+    from openground import query
+    from openground.server import mcp
+    from openground.service import add_library
+
+    await asyncio.to_thread(
+        add_library, "lib", "https://github.com/example/example.git"
+    )
+    requests = Barrier(2)
+
+    def encode(**kwargs):
+        requests.wait(timeout=5)
+        return [[0.1] * 384 for _ in kwargs["sentences"]]
+
+    model = SimpleNamespace(encode=encode)
+    constructor = Mock(return_value=model)
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=constructor),
+    )
+    monkeypatch.setattr(query, "generate_embeddings", embeddings.generate_embeddings)
+    try:
+        assert embeddings.get_st_model("BAAI/bge-small-en-v1.5") is model
+        async with Client(mcp) as client:
+            results = await asyncio.gather(
+                *(
+                    client.call_tool(
+                        "search_documents_tool",
+                        {"query": term, "library_name": "lib", "version": "latest"},
+                    )
+                    for term in ("guide", "intro")
+                )
+            )
+        assert all("Found" in result.content[0].text for result in results)
+        constructor.assert_called_once_with("BAAI/bge-small-en-v1.5")
+    finally:
+        embeddings._load_st_model.cache_clear()

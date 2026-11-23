@@ -1,6 +1,5 @@
 import asyncio
 import sys
-from threading import Lock
 
 from fastmcp import FastMCP
 
@@ -27,20 +26,6 @@ mcp = FastMCP(
 )
 
 
-_search_lock = Lock()
-
-
-def _search_documents(query: str, library_name: str, version: str) -> str:
-    # Search can update the cached embedding settings to match the database.
-    with _search_lock:
-        return search(
-            query=query,
-            version=version,
-            library_name=library_name,
-            show_progress=False,
-        )
-
-
 @mcp.tool
 async def search_documents_tool(
     query: str,
@@ -58,7 +43,13 @@ async def search_documents_tool(
     """
     increment_tool_call("search_documents_tool")
     try:
-        return await asyncio.to_thread(_search_documents, query, library_name, version)
+        return await asyncio.to_thread(
+            search,
+            query,
+            version=version,
+            library_name=library_name,
+            show_progress=False,
+        )
     except UserError as e:
         return str(e)
 

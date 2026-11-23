@@ -8,7 +8,7 @@ from threading import Lock
 
 from tqdm import tqdm
 
-from openground.config import get_settings
+from openground.config import Settings, get_settings
 from openground.console import error, hint, warning
 
 
@@ -136,12 +136,12 @@ def _load_fastembed_model(model_name: str, use_cuda: bool):
 
 def _generate_embeddings_sentence_transformers(
     texts: Iterable[str],
-    show_progress: bool = True,
+    settings: Settings,
+    show_progress: bool,
 ) -> list[list[float]]:
     """Embed texts with sentence-transformers."""
-    config = get_settings()
-    batch_size = config.batch_size
-    model_name = config.embedding_model
+    batch_size = settings.batch_size
+    model_name = settings.embedding_model
     model = get_st_model(model_name)
 
     texts_list = list(texts)
@@ -172,12 +172,12 @@ def _generate_embeddings_sentence_transformers(
 
 def _generate_embeddings_fastembed(
     texts: Iterable[str],
-    show_progress: bool = True,
+    settings: Settings,
+    show_progress: bool,
 ) -> list[list[float]]:
     """Embed passages with fastembed."""
-    config = get_settings()
-    batch_size = config.batch_size
-    model_name = config.embedding_model
+    batch_size = settings.batch_size
+    model_name = settings.embedding_model
 
     texts_list = list(texts)
     all_embeddings = []
@@ -204,15 +204,18 @@ def _generate_embeddings_fastembed(
 def generate_embeddings(
     texts: Iterable[str],
     show_progress: bool = True,
+    *,
+    settings: Settings | None = None,
 ) -> list[list[float]]:
     """Embed texts with the configured backend."""
-    backend = get_settings().embedding_backend
+    settings = settings if settings is not None else get_settings()
+    backend = settings.embedding_backend
 
     if backend == "fastembed":
-        return _generate_embeddings_fastembed(texts, show_progress=show_progress)
+        return _generate_embeddings_fastembed(texts, settings, show_progress)
     elif backend == "sentence-transformers":
         return _generate_embeddings_sentence_transformers(
-            texts, show_progress=show_progress
+            texts, settings, show_progress
         )
     else:
         raise ValueError(

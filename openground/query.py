@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     import lancedb.table
 
-from openground.config import TABLE_NAME, get_db_path, get_settings
+from openground.config import TABLE_NAME, Settings, get_db_path, get_settings
 from openground.console import UserError
 from openground.embeddings import generate_embeddings
 
@@ -33,11 +33,13 @@ def _match(library_name: str, version: str) -> str:
     )
 
 
-def check_embedding_config() -> None:
-    """Match settings to the stored embeddings, or fail if the config explicitly conflicts."""
-    table = _get_table()
+def check_embedding_config(table: Optional["lancedb.table.Table"] = None) -> Settings:
+    """Resolve a settings snapshot for the table's embeddings."""
+    settings = get_settings().model_copy()
+    if table is None:
+        table = _get_table()
     if table is None or not table.schema.metadata:
-        return
+        return settings
 
     stored = {
         (k.decode() if isinstance(k, bytes) else k): (
@@ -45,17 +47,16 @@ def check_embedding_config() -> None:
         )
         for k, v in table.schema.metadata.items()
     }
-    settings = get_settings()
     stored_pair = (stored.get("embedding_backend"), stored.get("embedding_model"))
     current = (settings.embedding_backend, settings.embedding_model)
     if stored_pair == current or None in stored_pair:
-        return
+        return settings
 
     # The database remembers its model, so it wins unless the user chose one explicitly.
     if not {"embedding_backend", "embedding_model"} & settings.model_fields_set:
         settings.embedding_backend, settings.embedding_model = stored_pair
         settings.embedding_dimensions = table.schema.field("vector").type.list_size
-        return
+        return settings
 
     raise UserError(
         "Embedding config mismatch.\n"
@@ -98,12 +99,14 @@ def search(
 ) -> str:
     """Hybrid (semantic + BM25) search; returns a markdown summary of the matches."""
     check_library_version(library_name, version)
-    check_embedding_config()
     table = _get_table()
     if table is None:
         return "Found 0 matches."
 
-    query_vec = generate_embeddings([query], show_progress=show_progress)[0]
+    settings = check_embedding_config(table)
+    query_vec = generate_embeddings(
+        [query], show_progress=show_progress, settings=settings
+    )[0]
     builder = table.search(query_type="hybrid").text(query).vector(query_vec)
 
     filters = []
@@ -114,9 +117,7 @@ def search(
     if filters:
         builder = builder.where(" AND ".join(filters))
 
-    results = builder.limit(
-        top_k if top_k is not None else get_settings().top_k
-    ).to_list()
+    results = builder.limit(top_k if top_k is not None else settings.top_k).to_list()
     if not results:
         return "Found 0 matches."
 

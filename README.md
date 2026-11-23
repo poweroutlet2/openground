@@ -77,7 +77,7 @@ Git and local sources index `.md`, `.rst`, `.txt`, `.mdx`, `.ipynb`, `.html` and
 | `ls` | List libraries, versions, and whether a source is remembered |
 | `rm NAME` | Delete a library version; the remembered source is forgotten once the last version is gone. `-v` is only needed when several versions are stored. `-y` skips the prompt |
 | `search QUERY` | Hybrid search from the terminal. Options: `-l`, `-v`, `-k` |
-| `serve` | Run the MCP server on stdio (same as `openground-mcp`) |
+| `serve` | Run the MCP server (same as `openground-mcp`). Options: `--transport`, `--host`, `--port` |
 | `install-mcp [CLIENT]` | Configure `claude-code`, `cursor` or `opencode`; no client prints the JSON. `--wsl` launches the server through `wsl.exe` |
 | `config` | Show the config file path, effective settings and data locations |
 | `stats` | Library and chunk counts plus MCP tool call counts. `--reset` zeroes the call counts |
@@ -116,6 +116,7 @@ Description=OpenGround MCP server
 [Service]
 ExecStart=%h/.local/bin/openground-mcp --transport http
 Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=default.target
@@ -125,6 +126,8 @@ WantedBy=default.target
 systemctl --user daemon-reload
 systemctl --user enable --now openground-mcp.service
 ```
+
+Run `loginctl enable-linger "$USER"` to keep the user service running after logout.
 
 For Claude Code, replace the existing user-scoped stdio entry if you used
 `openground install-mcp claude-code`. If you registered it at another scope,
@@ -144,7 +147,8 @@ For OpenCode v2, replace the `openground` entry under `mcp.servers` in
     "servers": {
       "openground": {
         "type": "remote",
-        "url": "http://127.0.0.1:8765/mcp"
+        "url": "http://127.0.0.1:8765/mcp",
+        "oauth": false
       }
     }
   }
